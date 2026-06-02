@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/scanners"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/scanners"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
 // pickFound returns the first FoundSecret with the given KeyName, or fails

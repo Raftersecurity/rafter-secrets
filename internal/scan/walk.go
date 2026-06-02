@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
 // walkRoot is the top-of-recursion entry. It seeds the ancestor chain

@@ -1,4 +1,4 @@
-// Package wizard implements trove's first-run setup prompt.
+// Package wizard implements Rafter Secrets' first-run setup prompt.
 //
 // FirstRun runs once, on a host that has never produced a global.json,
 // to populate ScanConfig.Roots and ScanConfig.Excludes. The user is
@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
 // FirstRun populates doc.ScanConfig from prompts on in / messages on
@@ -45,7 +45,7 @@ func FirstRun(in io.Reader, out io.Writer, doc *storage.Global) error {
 	defaultRoots := []string{home}
 	detected := detectCommonLayouts(home)
 
-	fmt.Fprintln(out, "Welcome to trove! Let's set up your secret scan scope.")
+	fmt.Fprintln(out, "Welcome to Rafter Secrets! Let's set up your secret scan scope.")
 	fmt.Fprintln(out)
 	fmt.Fprintf(out, "Default scan root: %s\n", home)
 	fmt.Fprintln(out, "Default excludes will skip system caches, build dirs, and VCS metadata.")

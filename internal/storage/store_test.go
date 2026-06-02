@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/fingerprint"
+	"github.com/Raftersecurity/rafter-secrets/internal/fingerprint"
 )
 
 func TestEmpty_SchemaPins(t *testing.T) {
@@ -174,7 +174,7 @@ func TestSave_DirMode0700(t *testing.T) {
 	root := t.TempDir()
 	// Save into a nested path that doesn't exist yet so MkdirAll has to
 	// create it with our chosen mode.
-	path := filepath.Join(root, "nested", "trove", "global.json")
+	path := filepath.Join(root, "nested", "rafter-secrets", "global.json")
 	if err := Save(path, Empty()); err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +236,7 @@ func TestDefaultPath_HonoursXDG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join("/custom/xdg", "trove", "global.json")
+	want := filepath.Join("/custom/xdg", "rafter-secrets", "global.json")
 	if got != want {
 		t.Errorf("DefaultPath = %q, want %q", got, want)
 	}
@@ -252,7 +252,7 @@ func TestDefaultPath_FallsBackToHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(home, ".config", "trove", "global.json")
+	want := filepath.Join(home, ".config", "rafter-secrets", "global.json")
 	if got != want {
 		t.Errorf("DefaultPath = %q, want %q", got, want)
 	}

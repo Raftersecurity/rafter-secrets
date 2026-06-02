@@ -1,5 +1,5 @@
 // Package fingerprint computes the BLAKE3-based identifiers and previews
-// that the trove storage layer uses to dedup and display secrets without
+// that the Rafter Secrets storage layer uses to dedup and display secrets without
 // ever persisting the underlying values.
 //
 // Two scanned secrets are treated as the same entry iff they share the same

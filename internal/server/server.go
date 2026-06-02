@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/docstore"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/eventbus"
+	"github.com/Raftersecurity/rafter-secrets/internal/docstore"
+	"github.com/Raftersecurity/rafter-secrets/internal/eventbus"
 )
 
 type Config struct {

@@ -4,10 +4,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/scanners"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/scanners/config"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/scanners/file"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/scanners/shellrc"
+	"github.com/Raftersecurity/rafter-secrets/internal/scanners"
+	"github.com/Raftersecurity/rafter-secrets/internal/scanners/config"
+	"github.com/Raftersecurity/rafter-secrets/internal/scanners/file"
+	"github.com/Raftersecurity/rafter-secrets/internal/scanners/shellrc"
 )
 
 // scannerFn is the common shape for the per-source scanners in

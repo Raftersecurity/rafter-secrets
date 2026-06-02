@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	cookieName   = "trove_session"
-	headerName   = "X-Trove-Token"
+	cookieName   = "rafter_secrets_session"
+	headerName   = "X-Rafter-Secrets-Token"
 	queryParam   = "token"
 	cookiePath   = "/"
 	cookieMaxAge = 0 // session cookie
@@ -91,8 +91,8 @@ func validLoopbackOrigin(origin string) bool {
 
 // requireToken authenticates every request. The session token may arrive via:
 //   - ?token=... query string (only on the initial page load from the launcher URL)
-//   - X-Trove-Token header (used by the in-page client for API calls)
-//   - trove_session cookie (set after a successful query-string auth)
+//   - X-Rafter-Secrets-Token header (used by the in-page client for API calls)
+//   - rafter_secrets_session cookie (set after a successful query-string auth)
 //
 // On a successful query-string auth we set the cookie and strip the token from
 // the URL so it doesn't linger in browser history.

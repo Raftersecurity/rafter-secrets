@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
 func TestResolveValue_EnvFile(t *testing.T) {

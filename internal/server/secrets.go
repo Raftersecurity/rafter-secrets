@@ -20,8 +20,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/scan"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/scan"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
 // secretsListResponse is the wire shape for GET /api/secrets. The
@@ -63,7 +63,7 @@ func (s *Server) handleSecretsList(w http.ResponseWriter, r *http.Request) {
 
 // addSecretRequest is the wire shape for POST /api/secrets — a secret
 // the user adds by hand (e.g. a key kept in a password manager, or one
-// they want to start tracking before trove has scanned its file). The
+// they want to start tracking before Rafter Secrets has scanned its file). The
 // annotation block carries the project tags / rotate link / notes.
 type addSecretRequest struct {
 	KeyName    string          `json:"key_name"`

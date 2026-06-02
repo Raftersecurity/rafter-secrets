@@ -14,7 +14,7 @@ package docstore
 import (
 	"sync"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
 // Saver persists the global doc to its backing store. Failure surfaces

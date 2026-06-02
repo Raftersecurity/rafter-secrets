@@ -35,12 +35,12 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/docstore"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/eventbus"
-	rescanpkg "github.com/Raftersecurity/rafter-cli/inventory-tool/internal/rescan"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/server"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/watch"
+	"github.com/Raftersecurity/rafter-secrets/internal/docstore"
+	"github.com/Raftersecurity/rafter-secrets/internal/eventbus"
+	rescanpkg "github.com/Raftersecurity/rafter-secrets/internal/rescan"
+	"github.com/Raftersecurity/rafter-secrets/internal/server"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/watch"
 )
 
 // fixtureFiles is the canonical set of secret-bearing files trove must
@@ -152,7 +152,7 @@ func startTrove(t *testing.T, fixtureRoot string) *trove {
 	t.Helper()
 
 	storeDir := t.TempDir()
-	storePath := filepath.Join(storeDir, "trove", "global.json")
+	storePath := filepath.Join(storeDir, "rafter-secrets", "global.json")
 
 	doc := storage.Empty()
 	doc.ScanConfig.Roots = []string{fixtureRoot}
@@ -260,7 +260,7 @@ func (tr *trove) waitReady(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		req.Header.Set("X-Trove-Token", tr.token)
+		req.Header.Set("X-Rafter-Secrets-Token", tr.token)
 		resp, err := http.DefaultClient.Do(req)
 		if err == nil {
 			_ = resp.Body.Close()
@@ -287,7 +287,7 @@ func (tr *trove) do(method, path string, body []byte) (int, []byte) {
 	if err != nil {
 		tr.t.Fatal(err)
 	}
-	req.Header.Set("X-Trove-Token", tr.token)
+	req.Header.Set("X-Rafter-Secrets-Token", tr.token)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -441,7 +441,7 @@ func TestInvariant_ConfigDirIsTheOnlyWriter(t *testing.T) {
 	// Sanity: the config dir SHOULD have been written. If not, we're
 	// not actually exercising the save path and the negative check
 	// above is meaningless.
-	storeFile := filepath.Join(tr.storeDir, "trove", "global.json")
+	storeFile := filepath.Join(tr.storeDir, "rafter-secrets", "global.json")
 	info, err := os.Stat(storeFile)
 	if err != nil {
 		t.Fatalf("expected trove to have written %s: %v", storeFile, err)

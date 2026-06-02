@@ -1,4 +1,4 @@
-// Package eventbus is trove's in-process pub/sub for drift events.
+// Package eventbus is Rafter Secrets' in-process pub/sub for drift events.
 // Producers (the watcher-driven rescanner) Publish; consumers (the SSE
 // route handler) Subscribe and receive a stream over a buffered channel.
 //
@@ -18,11 +18,11 @@ import (
 // stream's "event:" field and the JSON envelope's "type" use these
 // strings, and the browser code switches on them.
 const (
-	EventScanStarted  = "scan_started"
-	EventScanComplete = "scan_complete"
-	EventSecretCreated  = "secret_created"
+	EventScanStarted     = "scan_started"
+	EventScanComplete    = "scan_complete"
+	EventSecretCreated   = "secret_created"
 	EventSecretRefreshed = "secret_refreshed"
-	EventSecretDrifted  = "secret_drifted"
+	EventSecretDrifted   = "secret_drifted"
 )
 
 // Event is a single drift signal. Empty fields are omitted from the

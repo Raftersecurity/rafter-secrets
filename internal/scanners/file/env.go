@@ -14,8 +14,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/scanners"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/scanners"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
 // maxLineLen caps the byte length of a single env-file line. .env values

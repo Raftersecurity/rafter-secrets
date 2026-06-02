@@ -1,4 +1,4 @@
-// Package storage defines the on-disk schema for trove's global JSON store
+// Package storage defines the on-disk schema for Rafter Secrets' global JSON store
 // and the Load/Save primitives that read and atomically write it.
 //
 // The persisted shape is the wire contract: kp v0.9 reads this file natively
@@ -26,7 +26,7 @@ const (
 	SourceShellRC    = "shell-rc"
 	SourceSourceCode = "source-code"
 	// SourceManual marks a location the user typed in when adding a
-	// secret by hand. trove never reads it (reveal refuses manual
+	// secret by hand. Rafter Secrets never reads it (reveal refuses manual
 	// sources) — it's metadata for the user's own reference.
 	SourceManual = "manual"
 )

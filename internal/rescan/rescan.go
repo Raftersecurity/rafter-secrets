@@ -9,11 +9,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/docstore"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/eventbus"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/scan"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/watch"
+	"github.com/Raftersecurity/rafter-secrets/internal/docstore"
+	"github.com/Raftersecurity/rafter-secrets/internal/eventbus"
+	"github.com/Raftersecurity/rafter-secrets/internal/scan"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/watch"
 )
 
 // Config wires the rescanner. Store/Bus are required; Watcher is

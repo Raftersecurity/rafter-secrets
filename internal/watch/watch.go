@@ -1,4 +1,4 @@
-// Package watch is trove's filesystem drift watcher. It wraps fsnotify
+// Package watch is Rafter Secrets' filesystem drift watcher. It wraps fsnotify
 // to follow the user's configured scan roots and folds the burst of
 // events that a single edit produces into one debounced "rescan now"
 // signal delivered to the caller.
@@ -21,7 +21,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/scan"
+	"github.com/Raftersecurity/rafter-secrets/internal/scan"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -90,7 +90,7 @@ type Config struct {
 	Debounce time.Duration
 	// ExcludeDirs is a list of directory paths that must NOT be watched
 	// even if they sit under a configured root. Used to suppress the
-	// rescan→save→event→rescan loop the trove global-store directory
+	// rescan→save→event→rescan loop the Rafter Secrets global-store directory
 	// would otherwise produce when scanned-and-watched at $HOME.
 	ExcludeDirs []string
 	// Excludes is the user's spec-language exclude pattern set (the same
@@ -242,7 +242,7 @@ func (w *Watcher) Run(ctx context.Context, onChange func(), onError func(error))
 			// fsnotify on Linux fires events on a watched parent for
 			// changes to its immediate children, so a renamed temp file
 			// in an excluded subtree can still surface as an event on
-			// the watched root above it. Suppress those so the trove
+			// the watched root above it. Suppress those so the Rafter Secrets
 			// store-save loop stays tame.
 			if w.isExcluded(ev.Name) {
 				continue

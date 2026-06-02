@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
 // snapshotTree returns a deterministic sha256 manifest of every regular

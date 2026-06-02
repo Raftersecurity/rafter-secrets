@@ -4,7 +4,7 @@
 // caller (storage.Upsert) is responsible for persistence and dedup.
 package scanners
 
-import "github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
+import "github.com/Raftersecurity/rafter-secrets/internal/storage"
 
 // FoundSecret is one (key, value) pair observed in a scanned source plus
 // the FoundIn metadata describing where it was seen. Scanners emit these

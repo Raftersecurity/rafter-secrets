@@ -1,0 +1,55 @@
+# Rafter Secrets CI — tests + the zero-mutation guarantees.
+#
+# Two layers enforce the hard rule "never mutate a user's secret files":
+#   1. scripts/no-write-syscalls.sh — static lint: banned write symbols
+#      in the read-only packages.
+#   2. go test ./tests/invariant/... — runtime: the same guarantee asserted
+#      against a fixture filesystem driven through the full HTTP API.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: go.sum
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test -count=1 -timeout 120s ./...
+
+  zero-mutation:
+    name: zero-mutation guarantees
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: go.sum
+      - name: static lint (no write syscalls)
+        run: bash scripts/no-write-syscalls.sh
+      - name: runtime invariant (fixture is never mutated)
+        run: go test -count=1 -timeout 60s ./tests/invariant/...
+
+  cross-compile:
+    name: cross-compile (darwin/linux × amd64/arm64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: go.sum
+      - run: make build-all

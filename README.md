@@ -1,15 +1,21 @@
-# trove
+# Rafter Secrets
 
 > **Status: v0.1 — file/config/shellrc scanning + live UI shipped.** Storage,
 > fingerprint dedup, drift watching, and a browser inventory built for
 > non-technical people are all landed. Still gated: OS keystore reads
 > (`rc-4fc`) and source-code scan via betterleaks (`rc-ksy`). See spec for the
 > full v1 surface.
+>
+> Migrated from `rafter-cli/inventory-tool` (its internal name was `trove`); the
+> binary, Go module, and `~/.config/rafter-secrets/` config dir now carry the
+> product name. History is preserved.
 
-`trove` is the inventory tool from the Rafter 2.0 Secret Management project — a
-read-only, annotate-only auditor for secrets that already live in plaintext on
-your machine (`.env*` files, shell rc, agent configs, OS keystores, and source
-code via betterleaks).
+**Rafter Secrets** is the inventory tool from the Rafter 2.0 Secret Management
+project — a read-only, annotate-only auditor for the secrets that already live
+in plaintext on your machine (`.env*` files, shell rc, agent configs, OS
+keystores, and source code via betterleaks). It shows you what's there, in
+plain language, including which secrets any app or AI coding agent you run can
+read — and changes nothing.
 
 ## What's landed so far
 
@@ -26,7 +32,7 @@ A single Go binary that:
 
 Plus the storage and fingerprint internals the rest of v1 builds on:
 
-- `internal/storage`: typed schema for the `~/.config/trove/global.json`
+- `internal/storage`: typed schema for the `~/.config/rafter-secrets/global.json`
   document, atomic `Save` (temp-file + fsync + rename, mode `0600`), `Load`
   with first-run-as-empty semantics, XDG-aware default path, plus
   `Upsert` / `MarkStale` / `MarkRotated` (fingerprint-based dedup, drift
@@ -49,7 +55,7 @@ Plus the storage and fingerprint internals the rest of v1 builds on:
   with `$HOME` (plus any detected `~/code`, `~/git`, … layouts) and
   pre-loads the spec's default exclude list.
 
-A `--rescan` flag on `trove` triggers a non-interactive scan and
+A `--rescan` flag on `rafter-secrets` triggers a non-interactive scan and
 persists the updated store. The first-run wizard fires automatically
 on launch when `ScanConfig.Roots` is empty.
 
@@ -65,9 +71,9 @@ on launch when `ScanConfig.Roots` is empty.
   walk used to die with "too many open files" and take the scanner and
   UI down with it. When the cap or an OS limit is hit the watcher
   returns `ErrWatchLimit` (non-fatal): live coverage is partial and the
-  periodic/launch rescans fill the rest. The trove store directory is
+  periodic/launch rescans fill the rest. The Rafter Secrets store directory is
   excluded so the save-after-scan write doesn't loop the watcher.
-  `cmd/trove` also raises `RLIMIT_NOFILE` soft→hard at startup for
+  `cmd/rafter-secrets` also raises `RLIMIT_NOFILE` soft→hard at startup for
   headroom, and runs one scan on launch so the UI shows the current
   inventory immediately instead of waiting for the first file change.
 - `internal/eventbus`: in-process pub/sub broker for drift signals.
@@ -77,7 +83,7 @@ on launch when `ScanConfig.Roots` is empty.
   debounced trigger fires a `scan.Run`, per-secret outcomes are
   published to the bus, and the doc is persisted before
   `scan_complete`.
-- `/api/events`: server-sent-events stream over the trove HTTP
+- `/api/events`: server-sent-events stream over the Rafter Secrets HTTP
   surface. Clients connect with the existing session token, receive
   `scan_started`, `secret_created`, `secret_refreshed`,
   `secret_drifted`, and `scan_complete` frames as they happen.
@@ -100,10 +106,9 @@ on launch when `ScanConfig.Roots` is empty.
   rebinding never reaches a handler) and an **Origin check** on every
   state-changing request (defends CSRF alongside the SameSite=Strict
   cookie). Same-origin in-page fetches pass; cross-site does not.
-- `internal/server/static/`: the embedded inventory UI, branded
-  **Rafter Secrets** (the user-facing name; the binary/module are still
-  `trove` pending the repo move), written for people who have never
-  opened a terminal. Dark Rafter aesthetic (matches the
+- `internal/server/static/`: the embedded inventory UI for **Rafter
+  Secrets**, written for people who have never opened a terminal. Dark
+  Rafter aesthetic (matches the
   `docs/design-refs/` Vault Inspector). Every technical signal is
   translated at the edge: octal permissions become "readable by any app
   or AI agent on this computer" (the agent framing is deliberate — a
@@ -158,14 +163,14 @@ The zero-mutation rule has two enforcement layers — both must stay green:
   HTTP API and the real fsnotify-backed rescan pipeline against it, and
   asserts the manifest is byte-identical afterwards (apart from any mutation
   the test itself performs). A second test attaches an independent fsnotify
-  watcher to the fixture and asserts trove generates **zero** write events
+  watcher to the fixture and asserts Rafter Secrets generates **zero** write events
   there. A third fuzzes random JSON bodies at every PATCH/POST endpoint and
   asserts the fixture is still untouched.
   ```bash
   go test ./tests/invariant/...
   ```
 
-`.github-trove-lint.yml` is the staged GitHub Actions workflow that wires
+`.github-Rafter Secrets-lint.yml` is the staged GitHub Actions workflow that wires
 both layers into CI; P7 promotes it to `.github/workflows/`.
 
 ## Build
@@ -179,8 +184,8 @@ make run         # build + launch
 ## Layout
 
 ```
-inventory-tool/
-├── cmd/trove/         # entry point
+.                              # repo root (github.com/Raftersecurity/rafter-secrets)
+├── cmd/rafter-secrets/         # entry point
 └── internal/
     ├── server/        # localhost HTTP + token auth + lifecycle + SSE + inventory API + UI
     │   └── static/    # embedded HTML/JS for the inventory browser UI

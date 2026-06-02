@@ -10,7 +10,7 @@ package storage
 import (
 	"time"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/fingerprint"
+	"github.com/Raftersecurity/rafter-secrets/internal/fingerprint"
 )
 
 // Upsertable is one observation: a single (KeyName, Value) pair seen

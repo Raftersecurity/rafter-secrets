@@ -1,5 +1,5 @@
-BINARY := trove
-PKG    := ./cmd/trove
+BINARY := rafter-secrets
+PKG    := ./cmd/rafter-secrets
 DIST   := dist
 
 # Statically-linked builds. CGO is OFF here; keystore code (cgo) lives behind

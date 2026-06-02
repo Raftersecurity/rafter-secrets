@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	appDir   = "trove"
+	appDir   = "rafter-secrets"
 	fileName = "global.json"
 
 	// 0600: owner read/write only. The file holds key names, value
@@ -25,7 +25,7 @@ const (
 
 // DefaultPath returns the canonical location of the global store.
 //
-// It honours $XDG_CONFIG_HOME if set, falling back to ~/.config/trove/global.json
+// It honours $XDG_CONFIG_HOME if set, falling back to ~/.config/Rafter Secrets/global.json
 // otherwise. The returned path is not guaranteed to exist; first-run callers
 // should pass it to Load (which treats not-exist as empty) and then Save.
 func DefaultPath() (string, error) {

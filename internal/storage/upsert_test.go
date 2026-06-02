@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/fingerprint"
+	"github.com/Raftersecurity/rafter-secrets/internal/fingerprint"
 )
 
 func at(year int, month time.Month, day int) time.Time {

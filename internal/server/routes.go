@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-// routes wires every URL pattern handled by the trove HTTP surface.
+// routes wires every URL pattern handled by the Rafter Secrets HTTP surface.
 //
 // Patterns use Go 1.22's method-aware ServeMux so the per-handler
 // method check is enforced declaratively. Unlisted methods on listed
@@ -67,7 +67,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"version": "0.0.0-scaffold",
-		"name":    "trove",
+		"name":    "rafter-secrets",
 	})
 }
 

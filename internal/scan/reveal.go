@@ -3,7 +3,7 @@ package scan
 import (
 	"errors"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
 // ErrUnsupportedSource is returned by ResolveValue when the FoundIn

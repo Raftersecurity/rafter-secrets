@@ -5,7 +5,7 @@ import (
 	"io/fs"
 )
 
-// Static assets bundled into the trove binary. The browser UI is a
+// Static assets bundled into the Rafter Secrets binary. The browser UI is a
 // single-page application: index.html is served at /, and any sibling
 // asset (app.js, future css) is served from /static/<name>. All paths
 // are bounded by the embed directive so no host filesystem is read at

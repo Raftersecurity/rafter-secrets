@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/scanners"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/scanners"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
 func pickFound(t *testing.T, found []scanners.FoundSecret, key string) scanners.FoundSecret {

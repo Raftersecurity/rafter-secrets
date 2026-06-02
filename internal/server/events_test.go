@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/eventbus"
+	"github.com/Raftersecurity/rafter-secrets/internal/eventbus"
 )
 
 // newTestServerWithBus is the eventbus-aware twin of newTestServer.

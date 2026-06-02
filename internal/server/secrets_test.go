@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/docstore"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/docstore"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
 // newTestServerWithStore returns a server wired against an in-memory

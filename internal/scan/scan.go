@@ -1,10 +1,10 @@
-// Package scan is trove's filesystem orchestrator. It walks the user's
+// Package scan is Rafter Secrets' filesystem orchestrator. It walks the user's
 // configured scan roots, dispatches each recognised credential-bearing
 // file to the matching read-only scanner in internal/scanners/*, and
 // folds the resulting observations into the global store via
 // storage.Global.Upsert.
 //
-// The orchestrator is deliberately the only place in trove that opens
+// The orchestrator is deliberately the only place in Rafter Secrets that opens
 // directories. Every individual scanner already opens files O_RDONLY;
 // here we add the matching guarantee for traversal: no file is created,
 // renamed, or deleted, and symlinks pointing OUT of the configured roots
@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
 // Result is the per-Run summary returned to the caller. The same shape

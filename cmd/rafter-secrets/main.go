@@ -12,15 +12,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/browser"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/docstore"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/eventbus"
-	rescanpkg "github.com/Raftersecurity/rafter-cli/inventory-tool/internal/rescan"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/scan"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/server"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/watch"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/wizard"
+	"github.com/Raftersecurity/rafter-secrets/internal/browser"
+	"github.com/Raftersecurity/rafter-secrets/internal/docstore"
+	"github.com/Raftersecurity/rafter-secrets/internal/eventbus"
+	rescanpkg "github.com/Raftersecurity/rafter-secrets/internal/rescan"
+	"github.com/Raftersecurity/rafter-secrets/internal/scan"
+	"github.com/Raftersecurity/rafter-secrets/internal/server"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/watch"
+	"github.com/Raftersecurity/rafter-secrets/internal/wizard"
 )
 
 const defaultIdleTimeout = 30 * time.Minute
@@ -40,16 +40,16 @@ func main() {
 	// then bounds. Best-effort — a failure here just means we lean
 	// harder on the cap.
 	if _, err := raiseFileLimit(); err != nil {
-		fmt.Fprintf(os.Stderr, "trove: could not raise open-file limit (%v); continuing with watch caps\n", err)
+		fmt.Fprintf(os.Stderr, "rafter-secrets: could not raise open-file limit (%v); continuing with watch caps\n", err)
 	}
 
 	storePath, err := storage.DefaultPath()
 	if err != nil {
-		log.Fatalf("trove: resolve store path: %v", err)
+		log.Fatalf("rafter-secrets: resolve store path: %v", err)
 	}
 	doc, err := storage.Load(storePath)
 	if err != nil {
-		log.Fatalf("trove: load store: %v", err)
+		log.Fatalf("rafter-secrets: load store: %v", err)
 	}
 
 	// First-run gate: if no roots configured, walk the user through
@@ -57,10 +57,10 @@ func main() {
 	// subsequent launches skip the prompt.
 	if len(doc.ScanConfig.Roots) == 0 {
 		if err := wizard.FirstRun(os.Stdin, os.Stderr, doc); err != nil {
-			log.Fatalf("trove: first-run wizard: %v", err)
+			log.Fatalf("rafter-secrets: first-run wizard: %v", err)
 		}
 		if err := storage.Save(storePath, doc); err != nil {
-			log.Fatalf("trove: save store: %v", err)
+			log.Fatalf("rafter-secrets: save store: %v", err)
 		}
 	}
 
@@ -69,13 +69,13 @@ func main() {
 		defer cancel()
 		res, err := scan.Run(ctx, doc, doc.ScanConfig)
 		if err != nil {
-			log.Fatalf("trove: scan: %v", err)
+			log.Fatalf("rafter-secrets: scan: %v", err)
 		}
 		if err := storage.Save(storePath, doc); err != nil {
-			log.Fatalf("trove: save store: %v", err)
+			log.Fatalf("rafter-secrets: save store: %v", err)
 		}
 		fmt.Fprintf(os.Stderr,
-			"trove: scanned %d file(s); %d secret observation(s); %d error(s)\n",
+			"rafter-secrets: scanned %d file(s); %d secret observation(s); %d error(s)\n",
 			res.FilesScanned, res.SecretsFound, len(res.Errors))
 		return
 	}
@@ -91,11 +91,11 @@ func main() {
 		Store:       store,
 	})
 	if err != nil {
-		log.Fatalf("trove: %v", err)
+		log.Fatalf("rafter-secrets: %v", err)
 	}
 
 	url := srv.URL()
-	fmt.Fprintf(os.Stderr, "trove: serving on %s\n", url)
+	fmt.Fprintf(os.Stderr, "rafter-secrets: serving on %s\n", url)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -112,9 +112,9 @@ func main() {
 	// (e.g. one root unreadable) is logged but doesn't abort: the
 	// other roots are still watched, and the user can fix config
 	// without restarting.
-	// Exclude the trove store directory itself from the watcher; if a
+	// Exclude the Rafter Secrets store directory itself from the watcher; if a
 	// scan root is set to $HOME (the spec default), the store-save
-	// landing under ~/.config/trove would otherwise re-fire the
+	// landing under ~/.config/Rafter Secrets would otherwise re-fire the
 	// watcher and loop forever.
 	storeDir := filepath.Dir(storePath)
 	wch, wchErr := watch.NewWithConfig(watch.Config{
@@ -128,9 +128,9 @@ func main() {
 		Excludes: doc.ScanConfig.Excludes,
 	})
 	if errors.Is(wchErr, watch.ErrWatchLimit) {
-		fmt.Fprintf(os.Stderr, "trove: watching a subset of your scan scope (%s); trove will still re-scan periodically and on changes it can see. Narrow your scan roots in settings for full live coverage.\n", wchErr)
+		fmt.Fprintf(os.Stderr, "rafter-secrets: watching a subset of your scan scope (%s); Rafter Secrets will still re-scan periodically and on changes it can see. Narrow your scan roots in settings for full live coverage.\n", wchErr)
 	} else if wchErr != nil {
-		fmt.Fprintf(os.Stderr, "trove: watcher partial setup: %v\n", wchErr)
+		fmt.Fprintf(os.Stderr, "rafter-secrets: watcher partial setup: %v\n", wchErr)
 	}
 
 	rs, rsErr := rescanpkg.New(rescanpkg.Config{
@@ -138,16 +138,16 @@ func main() {
 		Bus:     bus,
 		Watcher: wch,
 		OnError: func(err error) {
-			fmt.Fprintf(os.Stderr, "trove: %v\n", err)
+			fmt.Fprintf(os.Stderr, "rafter-secrets: %v\n", err)
 		},
 	})
 	if rsErr != nil {
-		fmt.Fprintf(os.Stderr, "trove: watcher partial setup: %v\n", rsErr)
+		fmt.Fprintf(os.Stderr, "rafter-secrets: watcher partial setup: %v\n", rsErr)
 	}
 	if rs != nil {
 		go func() {
 			if err := rs.Run(ctx); err != nil {
-				fmt.Fprintf(os.Stderr, "trove: watcher exited: %v\n", err)
+				fmt.Fprintf(os.Stderr, "rafter-secrets: watcher exited: %v\n", err)
 			}
 		}()
 		// Kick off one scan immediately so the UI shows the current
@@ -161,13 +161,13 @@ func main() {
 
 	if !*noOpen {
 		if err := browser.Open(url); err != nil {
-			fmt.Fprintf(os.Stderr, "trove: could not open browser (%v); paste the URL above instead\n", err)
+			fmt.Fprintf(os.Stderr, "rafter-secrets: could not open browser (%v); paste the URL above instead\n", err)
 		}
 	}
 
 	// Run blocks until lifecycle watchdog, signal handler, or close-beacon
 	// triggers a shutdown.
 	if err := srv.Run(ctx); err != nil {
-		log.Fatalf("trove: server: %v", err)
+		log.Fatalf("rafter-secrets: server: %v", err)
 	}
 }

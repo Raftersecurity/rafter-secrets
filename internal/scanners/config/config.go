@@ -20,8 +20,8 @@ import (
 	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/scanners"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/scanners"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
 // readSourceFile is the shared "open + stat + slurp" used by every

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
 // withFakeHome replaces $HOME (and clears XDG_CONFIG_HOME) with a temp

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/docstore"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/eventbus"
-	"github.com/Raftersecurity/rafter-cli/inventory-tool/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/docstore"
+	"github.com/Raftersecurity/rafter-secrets/internal/eventbus"
+	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
 // drainEvents pulls events into a slice until the channel is empty for

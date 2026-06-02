@@ -1,4 +1,4 @@
-module github.com/Raftersecurity/rafter-cli/inventory-tool
+module github.com/Raftersecurity/rafter-secrets
 
 go 1.22
 
