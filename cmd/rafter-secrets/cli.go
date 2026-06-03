@@ -438,7 +438,15 @@ func editCmd(verb string, args []string) int {
 
 func reportEdit(jsonOut bool, res *edit.Result) int {
 	if jsonOut {
-		return emit(map[string]any{"ok": true, "op": res.Op, "op_id": res.OpID, "applied": res.Applied, "changes": res.Changes})
+		// Emit which FILES changed — never the file contents. res.Changes
+		// carries full before/after text (for a future masked diff UI), and
+		// dumping it here would leak every OTHER secret in the same file to
+		// the caller. The caller already supplied the new value.
+		files := make([]string, 0, len(res.Changes))
+		for _, c := range res.Changes {
+			files = append(files, c.Path)
+		}
+		return emit(map[string]any{"ok": true, "op": res.Op, "key": res.Key, "op_id": res.OpID, "applied": res.Applied, "files": files})
 	}
 	past := map[string]string{"rotate": "Rotated", "add": "Added", "delete": "Deleted"}
 	verb := "Would " + res.Op

@@ -174,3 +174,31 @@ Decisions:
 `rafter-code-review` + `rafter run` on the implementation PR; the runtime
 invariant test (rewritten per above) and the extended write-lint are the
 machine-checked floor.
+
+## rafter-code-review findings (2026-06-03)
+
+Independent review of the implemented engine + CLI (CWE Top 25 walk, adversarial).
+`go test -race` clean; `rafter secrets` clean; the verify backstop confirmed sound
+(re-scans the candidate with the real scanner and rejects unless exactly the target
+secret changed; encoders reject newlines / un-round-trippable quoting; shell values
+are single-quoted and inert when sourced; atomic rename is TOCTOU-safe).
+
+Fixed:
+- **[Medium, CWE-200] `--json` edit output leaked sibling secrets.** The CLI emitted
+  the engine's `Change` records, which carry full before/after file text — so rotating
+  one key in a multi-secret file returned every other secret in that file. Now emits
+  only the changed file paths (+ op + key). The engine still carries full text for a
+  future masked diff UI; callers must not echo it raw.
+
+Accepted / documented residual risks:
+- **Backups retain rotated-away plaintext values** under `~/.config/rafter-secrets/backups/`
+  (0600, pruned at 200 ops). The value was already plaintext on disk and is invalid once
+  the user rotates at the vendor; the cap bounds accumulation. A future option could
+  shorten retention or scrub on prune.
+- **Structured (JSON/YAML) edits parse-reemit**, which reformats the file and drops YAML
+  comments; `verifyChange` only checks secret keys, so non-secret content changes aren't
+  caught. The common formats (dotenv/shell/npmrc/AWS) use byte-preserving line editors;
+  `gh/hosts.yml` is tool-managed and rarely hand-commented.
+- **CLI rotate/rm pass `expectOld=""`** (no optimistic-concurrency guard) — a concurrent
+  external edit could be clobbered; undo recovers. Single-user local tool. The web API
+  will pass the seen value.
