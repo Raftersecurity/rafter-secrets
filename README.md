@@ -29,11 +29,13 @@ Rafter Secrets is the inventory and hygiene tool for that problem:
 
 - **See it.** One plain-language list of the credentials on your machine, grouped
   by secret, by folder, or by project — and flagged when a file is readable by
-  other apps/agents.
-- **Fix it.** Rotate a key everywhere it appears, add one, or remove one — with a
-  preview first, an automatic backup, and one-click undo.
-- **Trust it.** A single local binary. Read-only by default behaviour, no account,
-  no network calls, no telemetry. Your secrets never leave the machine.
+  other apps/agents. This is the whole point: effortless local inventory.
+- **Fix it — from the CLI.** When you want to act, the CLI can rotate a key
+  everywhere it appears, add one, or remove one — each with a preview first, an
+  automatic backup, and one-click undo. The **web app stays read-and-annotate**;
+  changes are a deliberate command-line action, never a stray click in a browser.
+- **Trust it.** A single local binary. No account, no network calls, no telemetry.
+  Your secrets never leave the machine.
 
 ## Install
 
@@ -58,8 +60,10 @@ rafter-secrets list
 ```
 
 Running it with no command launches a **local web app** (bound to `127.0.0.1`
-only, behind a one-time session token) — a friendly inventory built for people
-who have never opened a terminal. Running it with a command makes it a CLI.
+only, behind a one-time session token) — a friendly, **read-and-annotate**
+inventory built for people who have never opened a terminal: see your secrets,
+group and tag them, keep notes. Running it with a command makes it a CLI — which
+is also where any *changes* (rotate / add / remove) happen, entirely locally.
 
 ## The CLI (built for agents)
 
@@ -85,10 +89,11 @@ rafter-secrets history --json
 See [`AGENTS.md`](AGENTS.md) for the agent contract (JSON shapes, exit codes,
 safety rules).
 
-## Editing is safe by construction
+## Editing (CLI) is safe by construction
 
-Until recently this tool was read-only. Writing to real credential files is
-serious, so every edit is wrapped in machine-checked safety — see the full
+Editing is a CLI-only, local operation — there are no edit endpoints on the web
+server and no "rotate" buttons in the browser. Writing to real credential files
+is serious, so every edit is wrapped in machine-checked safety — see the full
 [secure-design doc](docs/design/secret-editing.md):
 
 - **Preview first** — you see exactly which files change before anything is written.
