@@ -26,6 +26,14 @@ import (
 const defaultIdleTimeout = 30 * time.Minute
 
 func main() {
+	// CLI subcommands run and exit before the UI-launch path. A bare
+	// invocation (or UI flags like --no-open) falls through to runUI.
+	if len(os.Args) > 1 {
+		if code, ok := dispatchCLI(os.Args[1:]); ok {
+			os.Exit(code)
+		}
+	}
+
 	var (
 		noOpen      = flag.Bool("no-open", false, "do not auto-open browser")
 		idleTimeout = flag.Duration("idle-timeout", defaultIdleTimeout, "exit after this long with no client heartbeat")
