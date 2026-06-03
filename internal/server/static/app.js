@@ -695,9 +695,26 @@
     copy: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="9" rx="1.2"/><path d="M3 11V3a1 1 0 0 1 1-1h6"/></svg>',
   };
 
+  // ---- theme toggle ----------------------------------------------------
+  // The page paints in the OS theme via CSS prefers-color-scheme (no inline
+  // script needed, so the strict CSP stays intact). An explicit choice is
+  // stored and applied as data-theme, which overrides the OS default.
+  function wireTheme() {
+    const saved = localStorage.getItem("rafter.theme");
+    if (saved === "light" || saved === "dark") document.documentElement.dataset.theme = saved;
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+      const cur = document.documentElement.dataset.theme
+        || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      const next = cur === "dark" ? "light" : "dark";
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem("rafter.theme", next);
+    });
+  }
+
   // ---- boot ------------------------------------------------------------
   document.getElementById("add-secret-btn").addEventListener("click", openAddSecret);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && modalRoot.firstChild) closeModal(); });
+  wireTheme();
   wireViewToggle();
   loadSecrets();
   startEvents();

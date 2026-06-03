@@ -55,7 +55,7 @@ Usage:
   rafter-secrets [command] [flags]
 
 Commands:
-  (none)            Launch the local web app (default)
+  serve             Launch the local web app (also the default with no command)
   scan              Scan your configured locations and update the inventory
   list              List tracked secrets
   show <key>        Show one secret: where it lives, projects, status

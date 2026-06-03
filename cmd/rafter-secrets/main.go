@@ -28,8 +28,12 @@ const defaultIdleTimeout = 30 * time.Minute
 func main() {
 	// CLI subcommands run and exit before the UI-launch path. A bare
 	// invocation (or UI flags like --no-open) falls through to runUI.
+	// `serve` is an explicit alias for the default UI launch — drop it and
+	// let the flag parser see the rest.
 	if len(os.Args) > 1 {
-		if code, ok := dispatchCLI(os.Args[1:]); ok {
+		if os.Args[1] == "serve" {
+			os.Args = append(os.Args[:1], os.Args[2:]...)
+		} else if code, ok := dispatchCLI(os.Args[1:]); ok {
 			os.Exit(code)
 		}
 	}
