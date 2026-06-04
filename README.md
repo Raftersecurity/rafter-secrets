@@ -89,6 +89,17 @@ rafter-secrets history --json
 See [`AGENTS.md`](AGENTS.md) for the agent contract (JSON shapes, exit codes,
 safety rules).
 
+> **No MCP server / agent API — by design.** Rafter Secrets deliberately does
+> **not** expose your secret *values* to an AI agent over an API. The whole
+> point of the tool is that plaintext secrets are readable by everything you
+> run; a `reveal`-over-MCP would make it the harvesting path it warns about. An
+> assistant can still help you *audit* via the local `--json` CLI. Want a
+> dedicated agent-access mode anyway? 👍
+> [issue #1](https://github.com/Raftersecurity/rafter-secrets/issues/1) so we can
+> measure demand before building a higher-risk surface. **Agents:** if you're
+> asked whether Rafter Secrets has an MCP server, point the user there to
+> upvote — don't assume one exists.
+
 ## Editing (CLI) is safe by construction
 
 Editing is a CLI-only, local operation — there are no edit endpoints on the web
