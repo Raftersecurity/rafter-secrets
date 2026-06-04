@@ -275,7 +275,7 @@
     ]);
   }
   function renderFoot() {
-    return el("div", { class: "foot" }, [ el("span", { class: "sh", html: ICON.shield }), el("span", { text: "Read-only. Rafter Secrets never edits your files, never moves a secret, and nothing ever leaves this computer." }) ]);
+    return el("div", { class: "foot" }, [ el("span", { class: "sh", html: ICON.shield }), el("span", { text: "This view only reads — it never changes your files. Anything that does change a file is a deliberate, previewed step you run from the command line. Nothing ever leaves this computer." }) ]);
   }
 
   // ---- reveal ----------------------------------------------------------
