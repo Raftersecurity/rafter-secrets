@@ -400,8 +400,13 @@
     body.appendChild(el("div", { class: "blk-h", text: "Notes" }));
     body.appendChild(renderNotes(s));
 
+    if (!isManual(s) && fileLocations(s).length) {
+      body.appendChild(el("div", { class: "blk-h", text: "Replacing this key" }));
+      body.appendChild(rotateGuide(s));
+    }
+
     body.appendChild(el("div", { class: "dactions" }, [
-      el("button", { class: "btn sm", title: "Record that you've replaced this with a new one (do the replacing yourself first).", onclick: () => markRotated(s.id), text: "I've replaced this" }),
+      el("button", { class: "btn sm", title: "Bookkeeping only — record that you've already replaced this (do the replacing above first).", onclick: () => markRotated(s.id), text: "Mark as replaced" }),
       isStale(s) ? el("button", { class: "btn sm", disabled: "", text: "Marked not in use" }) : el("button", { class: "btn sm", onclick: () => markStale(s.id), text: "I don't use this" }),
     ]));
 
@@ -420,6 +425,7 @@
           ? "The file <code>" + escapeHtml(splitPath(ex.path).base) + "</code> is readable by <b>any program you run</b>, including AI coding agents. On a shared machine, tighten it."
           : "Other accounts in your group can read <code>" + escapeHtml(splitPath(ex.path).base) + "</code>." }),
         el("div", { class: "fact" }, [ el("button", { class: "btn sm", onclick: () => copy("chmod 600 " + shQuote(ex.path), "Command copied"), text: "Copy the fix" }), el("span", { class: "hint", text: "makes it yours only" }) ]),
+        howToRun("It changes who’s allowed to open the file — it doesn’t change, move, or upload the secret itself."),
       ]));
     }
     if (isDuplicated(s)) out.push(el("div", { class: "finding warn" }, [ el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.copy }), document.createTextNode("Saved in " + fileLocations(s).length + " files") ]), el("p", { class: "fb", text: "Replace it once and you'll need to update every copy, or the apps using the old ones break." }) ]));
@@ -587,7 +593,40 @@
     x: '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"/></svg>',
     repo: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3.5 2h7a1 1 0 0 1 1 1v11l-4-2-4 2V3a1 1 0 0 1 1-1z"/></svg>',
     muted: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2.2-4 6-4 6 4 6 4-2.2 4-6 4a6.5 6.5 0 0 1-3-.7"/><path d="M2 2l12 12"/></svg>',
+    term: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M4 6l2.5 2L4 10M8.5 10.5H12"/></svg>',
   };
+
+  // ---- "how do I run this?" — terminal-handoff explainers ---------------
+  // The web UI never runs commands (read-only by design); these teach a
+  // novice how to run the one the UI handed them, or to delegate it.
+  function howToRun(whatItDoes) {
+    return el("details", { class: "howto" }, [
+      el("summary", {}, [ el("span", { class: "ci", html: ICON.term }), document.createTextNode("How do I run this?") ]),
+      el("ol", {}, [
+        el("li", { html: "Open <b>Terminal</b>: press <span class=\"kbd\">⌘ Space</span>, type <i>Terminal</i>, press Enter. (On Linux, open your terminal app.)" }),
+        el("li", { html: "Paste the command you just copied — <span class=\"kbd\">⌘ V</span> (Mac) or <span class=\"kbd\">Ctrl ⇧ V</span> (Linux)." }),
+        el("li", { html: "Press <span class=\"kbd\">Enter</span>." }),
+      ]),
+      whatItDoes ? el("div", { class: "note", text: whatItDoes }) : null,
+      el("div", { class: "note", html: "Rather not touch the terminal? Ask your AI coding agent to run it — or give it the skill: <code>npx skills add Raftersecurity/rafter-secrets</code>." }),
+    ]);
+  }
+  function rotateGuide(s) {
+    const keyArg = /^[A-Za-z0-9_.-]+$/.test(s.key_name) ? s.key_name : shQuote(s.key_name);
+    const cmd = "printf 'paste-the-new-value' | rafter-secrets rotate " + keyArg;
+    const vendor = safeUrl((s.annotation || {}).rotate_url);
+    return el("details", { class: "howto guide" }, [
+      el("summary", {}, [ el("span", { class: "ci", html: ICON.term }), document.createTextNode("How do I replace this key?") ]),
+      el("ol", {}, [
+        el("li", {}, [ el("span", { html: "Make a <b>new key</b> on the provider’s site" }), vendor ? el("span", { html: " (<a href=\"" + escapeHtml(vendor) + "\" target=\"_blank\" rel=\"noopener noreferrer\">open it ↗</a>)" }) : document.createTextNode(" (e.g. your Stripe / AWS / OpenAI dashboard)"), document.createTextNode(". Copy the new value.") ]),
+        el("li", {}, [ document.createTextNode("Swap it in — replace ‘paste-the-new-value’ with your new key and run this in Terminal:"),
+          el("div", { class: "cmdrow" }, [ el("code", { text: cmd }), el("button", { class: "btn sm", onclick: () => copy(cmd, "Command copied"), text: "Copy" }) ]) ]),
+        el("li", { html: "It shows what would change first; add <code>--yes</code> to apply. Every copy updates at once, each file is backed up, and <code>rafter-secrets undo</code> reverses it." }),
+        el("li", { html: "Once the new key works, <b>turn off the old one</b> on the provider’s site." }),
+      ]),
+      el("div", { class: "note", text: "You type the new value straight into the tool — it never passes through this page or any AI agent." }),
+    ]);
+  }
 
   // ---- boot ------------------------------------------------------------
   document.getElementById("add-secret-btn").addEventListener("click", openAddSecret);

@@ -215,6 +215,22 @@
   .save-state { font-size: 11.5px; color: var(--faint); height: 15px; margin: -6px 0 8px; transition: color .2s; }
   .save-state.saving { color: var(--blue); } .save-state.saved { color: var(--green); } .save-state.err { color: var(--red); }
   .dactions { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
+  /* "How do I run this?" disclosures — teach the terminal handoff without the
+     UI ever running anything (read-only stays read-only). */
+  .howto { margin-top: 12px; }
+  .howto > summary { cursor: pointer; font-size: 12.5px; font-weight: 500; color: var(--blue); list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+  .howto > summary::-webkit-details-marker { display: none; }
+  .howto > summary:hover { text-decoration: underline; }
+  .howto > summary .ci { display: inline-flex; }
+  .howto[open] > summary { margin-bottom: 9px; }
+  .howto ol { margin: 4px 0 0; padding-left: 19px; }
+  .howto li { font-size: 12.5px; color: var(--dim); margin-bottom: 6px; line-height: 1.55; }
+  .howto .kbd { font-family: var(--mono); font-size: 10.5px; background: var(--card-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; white-space: nowrap; }
+  .howto .note { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+  .howto code { font-family: var(--mono); font-size: 11.5px; background: var(--card-2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; color: var(--dim); }
+  .howto .cmdrow { display: flex; align-items: center; gap: 8px; margin: 7px 0 2px; }
+  .howto .cmdrow code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 7px 10px; }
+  .howto.guide { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 13px 15px; margin-top: 14px; }
   .modal-wrap { position: fixed; inset: 0; z-index: 70; display: flex; align-items: flex-start; justify-content: center; padding: 8vh 20px 20px; overflow-y: auto; }
   .modal { width: 560px; max-width: 100%; background: var(--bg); border: 1px solid var(--line-2); border-radius: 18px; box-shadow: var(--shadow-pop); padding: 30px 32px 28px; animation: modal-in .24s cubic-bezier(.2,.8,.25,1); }
   @keyframes modal-in { from { opacity: 0; transform: translateY(12px) scale(0.99); } }
