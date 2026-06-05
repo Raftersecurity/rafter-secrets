@@ -152,6 +152,82 @@ func TestExpectOldMismatch(t *testing.T) {
 	}
 }
 
+func modeOf(t *testing.T, p string) os.FileMode {
+	t.Helper()
+	fi, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fi.Mode().Perm()
+}
+
+func TestSecure_TightenAndUndo(t *testing.T) {
+	home := t.TempDir()
+	eng := New(t.TempDir(), nil)
+	path := writeFile(t, home, "code/app/.env", "API_KEY=secret-value-123\n", 0o644)
+	if err := os.Chmod(path, 0o644); err != nil { // defeat the test umask
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(path)
+
+	// Preview lists the mode change and writes nothing.
+	pre, err := eng.Secure("API_KEY", []Target{{Path: path}}, false)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if pre.Applied || len(pre.Changes) != 1 {
+		t.Fatalf("preview: applied=%v changes=%d", pre.Applied, len(pre.Changes))
+	}
+	if pre.Changes[0].Old != "0644" || pre.Changes[0].New != "0600" {
+		t.Errorf("preview modes = %q -> %q", pre.Changes[0].Old, pre.Changes[0].New)
+	}
+	if m := modeOf(t, path); m != 0o644 {
+		t.Errorf("preview changed mode to %04o", m)
+	}
+
+	// Apply tightens the mode but never touches contents.
+	res, err := eng.Secure("API_KEY", []Target{{Path: path}}, true)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if !res.Applied {
+		t.Fatal("apply not Applied")
+	}
+	if m := modeOf(t, path); m != 0o600 {
+		t.Fatalf("after secure mode = %04o, want 0600", m)
+	}
+	if b, _ := os.ReadFile(path); string(b) != string(content) {
+		t.Error("secure changed file contents")
+	}
+
+	// Undo restores the prior mode, contents still untouched.
+	if err := eng.Undo(res.OpID); err != nil {
+		t.Fatalf("undo: %v", err)
+	}
+	if m := modeOf(t, path); m != 0o644 {
+		t.Errorf("after undo mode = %04o, want 0644", m)
+	}
+	if b, _ := os.ReadFile(path); string(b) != string(content) {
+		t.Error("undo changed file contents")
+	}
+}
+
+func TestSecure_AlreadyTightNoop(t *testing.T) {
+	home := t.TempDir()
+	eng := New(t.TempDir(), nil)
+	path := writeFile(t, home, ".env", "API_KEY=x\n", 0o600)
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res, err := eng.Secure("API_KEY", []Target{{Path: path}}, true)
+	if err != nil {
+		t.Fatalf("secure: %v", err)
+	}
+	if res.Applied || len(res.Changes) != 0 {
+		t.Errorf("already-tight should be a no-op: applied=%v changes=%d", res.Applied, len(res.Changes))
+	}
+}
+
 func scanForKey(t *testing.T, path, key string) (string, string, int) {
 	t.Helper()
 	fs, _, _ := scan.ScanFile(path)

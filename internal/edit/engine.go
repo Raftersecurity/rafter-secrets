@@ -95,6 +95,74 @@ func (e *Engine) Add(key, value string, target Target, apply bool) (*Result, err
 	return e.run("add", opAdd, key, value, "", []Target{target}, apply)
 }
 
+// secureMode is owner read/write only — no group, no other.
+const secureMode = os.FileMode(0o600)
+
+// Secure tightens the permissions of key's files to owner-only (0600), so other
+// users and other programs you run can no longer read them. It changes only the
+// mode bits — never a byte of the file's contents — and skips files that are
+// already owner-only. It is reversible: Undo restores each file's prior mode.
+//
+// This is the "fix it for me" behind a world-readable secret. It lives in the
+// edit engine (the only writer), so it is path-checked, audited, and undoable
+// like every other write — and it stays a deliberate CLI/agent action, never a
+// web-server endpoint.
+func (e *Engine) Secure(key string, targets []Target, apply bool) (*Result, error) {
+	if len(targets) == 0 {
+		return nil, errors.New("no target files")
+	}
+	res := &Result{OpID: newOpID(e.now()), Op: "secure", Key: key, Applied: false}
+
+	type prep struct {
+		realPath string
+		oldMode  os.FileMode
+	}
+	var preps []prep
+	for _, t := range targets {
+		real, info, err := resolveTarget(t.Path, e.roots)
+		if err != nil {
+			return nil, err
+		}
+		old := info.Mode().Perm()
+		if old&0o077 == 0 {
+			continue // already owner-only — nothing to tighten
+		}
+		preps = append(preps, prep{realPath: real, oldMode: old})
+		res.Changes = append(res.Changes, Change{Path: real, Old: fmtMode(old), New: fmtMode(secureMode)})
+	}
+	if len(preps) == 0 || !apply {
+		return res, nil // nothing to do, or preview only
+	}
+
+	// Apply, recording the prior mode so Undo can put it back. No content
+	// backup is needed — contents never change — so manifest.Backup stays "".
+	man := manifest{OpID: res.OpID, Op: "secure", Key: key, Time: e.now()}
+	done := []prep{}
+	rollback := func() {
+		for _, p := range done {
+			_ = os.Chmod(p.realPath, p.oldMode)
+		}
+	}
+	for _, p := range preps {
+		if err := os.Chmod(p.realPath, secureMode); err != nil {
+			rollback()
+			return nil, fmt.Errorf("chmod %s failed, rolled back: %w", p.realPath, err)
+		}
+		man.Entries = append(man.Entries, manifestEntry{Path: p.realPath, Mode: p.oldMode})
+		done = append(done, p)
+	}
+	if err := e.writeManifest(man); err != nil {
+		_ = err // mode is changed; a missing manifest only costs undo
+	}
+	e.audit(man, "ok")
+	_ = e.pruneBackups()
+	res.Applied = true
+	return res, nil
+}
+
+// fmtMode renders permission bits as a 4-digit octal string (e.g. "0644").
+func fmtMode(m os.FileMode) string { return fmt.Sprintf("%04o", m.Perm()) }
+
 func (e *Engine) run(opName string, action op, key, value, expectOld string, targets []Target, apply bool) (*Result, error) {
 	if key == "" {
 		return nil, errors.New("missing key")
@@ -197,6 +265,17 @@ func (e *Engine) Undo(opID string) error {
 	man, err := e.readManifest(opID)
 	if err != nil {
 		return err
+	}
+	// A "secure" op only changed mode bits, so undo only restores the mode —
+	// rewriting contents would be wrong (and could clobber a later edit).
+	if man.Op == "secure" {
+		for _, ent := range man.Entries {
+			if err := os.Chmod(ent.Path, ent.Mode); err != nil {
+				return fmt.Errorf("restore permissions of %s: %w", ent.Path, err)
+			}
+		}
+		e.audit(manifest{OpID: opID, Op: "undo", Key: man.Key, Time: e.now(), Entries: man.Entries}, "ok")
+		return nil
 	}
 	for _, ent := range man.Entries {
 		data, err := os.ReadFile(ent.Backup)

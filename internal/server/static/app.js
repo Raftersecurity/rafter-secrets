@@ -419,13 +419,16 @@
     const ex = exposure(s);
     if (ex) {
       const danger = ex.level === "other";
+      const keyArg = /^[A-Za-z0-9_.-]+$/.test(s.key_name) ? s.key_name : shQuote(s.key_name);
+      const secureCmd = "rafter-secrets secure " + keyArg;
       out.push(el("div", { class: "finding " + (danger ? "danger" : "warn") }, [
         el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.warn }), document.createTextNode(danger ? "Any app or AI agent can read it" : "Your group can read it") ]),
-        el("p", { class: "fb", html: danger
-          ? "The file <code>" + escapeHtml(splitPath(ex.path).base) + "</code> is readable by <b>any program you run</b>, including AI coding agents. On a shared machine, tighten it."
-          : "Other accounts in your group can read <code>" + escapeHtml(splitPath(ex.path).base) + "</code>." }),
-        el("div", { class: "fact" }, [ el("button", { class: "btn sm", onclick: () => copy("chmod 600 " + shQuote(ex.path), "Command copied"), text: "Copy the fix" }), el("span", { class: "hint", text: "makes it yours only" }) ]),
-        howToRun("It changes who’s allowed to open the file — it doesn’t change, move, or upload the secret itself."),
+        el("p", { class: "fb", html: (danger
+          ? "The file <code>" + escapeHtml(splitPath(ex.path).base) + "</code> is readable by <b>any program you run</b>, including AI coding agents. "
+          : "Other accounts in your group can read <code>" + escapeHtml(splitPath(ex.path).base) + "</code>. ")
+          + "Rafter can lock it down for you — it changes who can open the file, never the secret, and it’s undoable." }),
+        el("div", { class: "fact" }, [ el("button", { class: "btn sm", onclick: () => copy(secureCmd, "Command copied"), text: "Lock it down" }), el("span", { class: "hint", html: "runs <code>rafter-secrets secure</code>" }) ]),
+        howToRun("That command locks the file to you only — it never changes, moves, or uploads the secret, and you can reverse it with rafter-secrets undo."),
       ]));
     }
     if (isDuplicated(s)) out.push(el("div", { class: "finding warn" }, [ el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.copy }), document.createTextNode("Saved in " + fileLocations(s).length + " files") ]), el("p", { class: "fb", text: "Replace it once and you'll need to update every copy, or the apps using the old ones break." }) ]));

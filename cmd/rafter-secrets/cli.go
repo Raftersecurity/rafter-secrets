@@ -24,6 +24,7 @@ var subcommands = map[string]func([]string) int{
 	"list":    cmdList,
 	"show":    cmdShow,
 	"reveal":  cmdReveal,
+	"secure":  cmdSecure,
 	"rotate":  cmdRotate,
 	"add":     cmdAdd,
 	"rm":      cmdRemove,
@@ -60,6 +61,8 @@ Commands:
   list              List tracked secrets
   show <key>        Show one secret: where it lives, projects, status
   reveal <key>      Print a secret's current value (reads it from disk)
+  secure <key>      Lock a secret's files to owner-only (chmod 600) so other
+                    apps and users can't read them
   rotate <key>      Replace a secret's value everywhere it appears
   add <key>         Add a new secret into a file
   rm <key>          Remove a secret from where it appears
@@ -355,6 +358,67 @@ func cmdReveal(args []string) int {
 		return 0
 	}
 	return fail(*jsonOut, 2, "no readable value for "+s.KeyName)
+}
+
+// cmdSecure tightens a secret's files to owner-only (0600). Like the other
+// edits it previews by default and applies with --yes; it's undoable.
+func cmdSecure(args []string) int {
+	fs := flag.NewFlagSet("secure", flag.ContinueOnError)
+	jsonOut := fs.Bool("json", false, "JSON output")
+	id := fs.String("id", "", "secret id (disambiguate)")
+	yes := fs.Bool("yes", false, "apply (default previews)")
+	pos, perr := parseArgs(fs, args)
+	if perr != nil {
+		return 2
+	}
+	if len(pos) < 1 && *id == "" {
+		return fail(*jsonOut, 2, "usage: rafter-secrets secure <key> [--yes]")
+	}
+	env, err := loadEnv(*jsonOut)
+	if err != nil {
+		return fail(*jsonOut, 1, err.Error())
+	}
+	s, err := env.findSecret(arg0(pos), *id)
+	if err != nil {
+		return fail(*jsonOut, 2, err.Error())
+	}
+	targets := editTargets(s)
+	if len(targets) == 0 {
+		return fail(*jsonOut, 2, s.KeyName+" has no files to secure")
+	}
+	res, err := env.engine().Secure(s.KeyName, targets, *yes)
+	if err != nil {
+		return fail(*jsonOut, 1, err.Error())
+	}
+	return reportSecure(*jsonOut, res)
+}
+
+func reportSecure(jsonOut bool, res *edit.Result) int {
+	if jsonOut {
+		files := make([]map[string]string, 0, len(res.Changes))
+		for _, c := range res.Changes {
+			files = append(files, map[string]string{"path": c.Path, "old_mode": c.Old, "new_mode": c.New})
+		}
+		return emit(map[string]any{"ok": true, "op": res.Op, "key": res.Key, "op_id": res.OpID, "applied": res.Applied, "files": files})
+	}
+	if len(res.Changes) == 0 {
+		fmt.Printf("%s is already locked down — every copy is owner-only.\n", res.Key)
+		return 0
+	}
+	if res.Applied {
+		fmt.Printf("Locked down %s across %d file(s):\n", res.Key, len(res.Changes))
+	} else {
+		fmt.Printf("Would lock down %s across %d file(s):\n", res.Key, len(res.Changes))
+	}
+	for _, c := range res.Changes {
+		fmt.Printf("  %s  %s → %s\n", c.Path, c.Old, c.New)
+	}
+	if !res.Applied {
+		fmt.Println("\nPreview only. Re-run with --yes to apply.")
+	} else {
+		fmt.Printf("\nDone — other apps and users can no longer read these. Undo with: rafter-secrets undo %s\n", res.OpID)
+	}
+	return 0
 }
 
 func cmdRotate(args []string) int { return editCmd("rotate", args) }
