@@ -20,10 +20,36 @@ import (
 	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
+// ApplyDefaults populates an unconfigured doc with the default scan scope
+// ($HOME plus the curated exclude list) without any prompting. This is the
+// first-run path the binary now takes: the user lands straight in the web app
+// with sensible defaults and adjusts scope there (the "Scan scope" panel),
+// instead of answering [Y/n] questions at a terminal they may never have
+// opened. The caller persists doc after this returns.
+func ApplyDefaults(doc *storage.Global) error {
+	if doc == nil {
+		return fmt.Errorf("wizard: nil doc")
+	}
+	if len(doc.ScanConfig.Roots) > 0 {
+		return nil // already configured — not a first run
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("wizard: resolve home dir: %w", err)
+	}
+	doc.ScanConfig.Roots = []string{home}
+	doc.ScanConfig.Excludes = DefaultExcludes()
+	return nil
+}
+
+// DetectCommonLayouts is the exported form of detectCommonLayouts so the web
+// UI's scope panel can suggest workspace dirs (~/code, ~/src, …) to add.
+func DetectCommonLayouts(home string) []string { return detectCommonLayouts(home) }
+
 // FirstRun populates doc.ScanConfig from prompts on in / messages on
-// out. If doc.ScanConfig.Roots is non-empty, FirstRun returns nil
-// immediately — the contract is that this is a first-run gate, not a
-// re-configuration UI. (The settings page handles ongoing edits.)
+// out. It is retained for an explicit, opt-in terminal setup; the default
+// first run uses ApplyDefaults and never prompts. If doc.ScanConfig.Roots is
+// non-empty, FirstRun returns nil immediately.
 //
 // Empty input on every prompt accepts every default. The caller is
 // responsible for persisting doc to disk after FirstRun returns.

@@ -337,6 +337,21 @@ func (tr *trove) driveFullAPI() {
 		tr.do("POST", "/api/secrets/"+s.ID+"/stale", nil)
 		tr.do("POST", "/api/secrets/"+s.ID+"/rotated", nil)
 	}
+	// Scan-scope: read the current scope and write it back unchanged. The
+	// roots are real (they're what's being scanned), so this drives the PUT's
+	// happy path — which triggers a re-scan — and it must still never touch a
+	// fixture file.
+	if st, body := tr.do("GET", "/api/scan-config", nil); st == 200 {
+		var sc struct {
+			Roots    []string `json:"roots"`
+			Excludes []string `json:"excludes"`
+		}
+		if json.Unmarshal(body, &sc) == nil && len(sc.Roots) > 0 {
+			b, _ := json.Marshal(map[string]any{"roots": sc.Roots, "excludes": sc.Excludes})
+			tr.do("PUT", "/api/scan-config", b)
+		}
+	}
+
 	// And the read paths once more to make sure handlers don't write
 	// on the way out the door.
 	tr.do("GET", "/api/secrets", nil)
@@ -481,7 +496,7 @@ func TestInvariant_FuzzedEndpoints(t *testing.T) {
 	for i := 0; i < iterations; i++ {
 		id := realIDs[rng.Intn(len(realIDs))]
 		body := randomJSON(rng)
-		switch rng.Intn(4) {
+		switch rng.Intn(5) {
 		case 0:
 			tr.do("POST", "/api/secrets/"+url.PathEscape(id)+"/reveal", body)
 		case 1:
@@ -490,6 +505,10 @@ func TestInvariant_FuzzedEndpoints(t *testing.T) {
 			tr.do("POST", "/api/secrets/"+url.PathEscape(id)+"/stale", body)
 		case 3:
 			tr.do("POST", "/api/secrets/"+url.PathEscape(id)+"/rotated", body)
+		case 4:
+			// Fuzz the scope endpoint too — a mutating PUT that changes
+			// what gets read must still never write a fixture file.
+			tr.do("PUT", "/api/scan-config", body)
 		}
 	}
 

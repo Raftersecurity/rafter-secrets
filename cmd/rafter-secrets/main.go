@@ -64,12 +64,14 @@ func main() {
 		log.Fatalf("rafter-secrets: load store: %v", err)
 	}
 
-	// First-run gate: if no roots configured, walk the user through
-	// the wizard before doing anything else. Persist the result so
-	// subsequent launches skip the prompt.
+	// First-run setup: if no roots are configured, apply sensible defaults
+	// ($HOME + curated excludes) without prompting and go straight to the web
+	// app. Onboarding — including adjusting scope — happens in the UI, not at a
+	// terminal the target user may never have opened. Persist so later launches
+	// skip this.
 	if len(doc.ScanConfig.Roots) == 0 {
-		if err := wizard.FirstRun(os.Stdin, os.Stderr, doc); err != nil {
-			log.Fatalf("rafter-secrets: first-run wizard: %v", err)
+		if err := wizard.ApplyDefaults(doc); err != nil {
+			log.Fatalf("rafter-secrets: first-run setup: %v", err)
 		}
 		if err := storage.Save(storePath, doc); err != nil {
 			log.Fatalf("rafter-secrets: save store: %v", err)
@@ -169,6 +171,12 @@ func main() {
 		// scan_started/scan_complete frames drive the UI's loading
 		// state) while a large $HOME is walked.
 		go rs.Rescan(ctx)
+
+		// Let the UI's "Scan scope" panel trigger a fresh scan after the
+		// user changes which folders to watch. Set before Run (handlers
+		// aren't serving yet), so no race. The watcher still covers the
+		// original roots until restart; a manual re-scan reflects new scope.
+		srv.SetRescan(func() { go rs.Rescan(ctx) })
 	}
 
 	if !*noOpen {

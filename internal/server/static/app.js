@@ -597,7 +597,70 @@
     repo: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3.5 2h7a1 1 0 0 1 1 1v11l-4-2-4 2V3a1 1 0 0 1 1-1z"/></svg>',
     muted: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2.2-4 6-4 6 4 6 4-2.2 4-6 4a6.5 6.5 0 0 1-3-.7"/><path d="M2 2l12 12"/></svg>',
     term: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M4 6l2.5 2L4 10M8.5 10.5H12"/></svg>',
+    folder: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M1.5 4.5a1 1 0 0 1 1-1H6l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H2.5a1 1 0 0 1-1-1z"/></svg>',
   };
+
+  // ---- scan scope panel ------------------------------------------------
+  // Lets the user see and adjust which folders Rafter looks in — the
+  // onboarding/scope step, in the browser instead of a terminal wizard.
+  async function openScopePanel() {
+    let data;
+    try { data = await api("/api/scan-config"); }
+    catch (e) { setToast("Couldn't load your scan scope: " + e.message, true); return; }
+    const roots = (data.roots || []).slice();
+    const home = data.home || "";
+    const pretty = (p) => (home && p.indexOf(home) === 0) ? "~" + p.slice(home.length) : p;
+    const modal = el("div", { class: "modal" });
+
+    function add(p) { p = (p || "").trim(); if (p && roots.indexOf(p) < 0) roots.push(p); }
+    function redraw() {
+      clear(modal);
+      modal.appendChild(el("div", { class: "mhead" }, [ el("h2", { text: "Where Rafter looks" }), el("button", { class: "btn ghost sm mclose", onclick: closeModal, text: "✕" }) ]));
+      modal.appendChild(el("p", { class: "msub", text: "Rafter scans these folders on your computer for secrets. Nothing is changed, moved, or uploaded — it only reads." }));
+
+      const list = el("div", { class: "scope-list" });
+      if (!roots.length) list.appendChild(el("div", { class: "scope-empty", text: "No folders yet — add one below." }));
+      for (const r of roots) {
+        list.appendChild(el("div", { class: "scope-row" }, [
+          el("span", { class: "ci", html: ICON.folder }),
+          el("span", { class: "scope-path mono", text: pretty(r) }),
+          el("button", { class: "btn ghost sm", title: "Remove", html: ICON.x, onclick: () => { const i = roots.indexOf(r); if (i >= 0) roots.splice(i, 1); redraw(); } }),
+        ]));
+      }
+      modal.appendChild(list);
+
+      const input = el("input", { class: "scope-input", type: "text", placeholder: "~/code   or   /full/path/to/a/folder" });
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); add(input.value); redraw(); } });
+      modal.appendChild(el("div", { class: "scope-add" }, [ input, el("button", { class: "btn sm", text: "Add", onclick: () => { add(input.value); redraw(); } }) ]));
+
+      const suggested = (data.suggested || []).filter((d) => roots.indexOf(d) < 0);
+      if (suggested.length) {
+        const row = el("div", { class: "suggests" }, [ el("span", { class: "slabel", text: "Suggested" }) ]);
+        for (const d of suggested) {
+          const c = el("span", { class: "tag suggest" }, [ el("span", { class: "gh", html: ICON.folder }), document.createTextNode(pretty(d)) ]);
+          c.addEventListener("click", () => { add(d); redraw(); });
+          row.appendChild(c);
+        }
+        modal.appendChild(row);
+      }
+
+      modal.appendChild(el("div", { class: "helpcard", html: "<b>Automatically skipped:</b> caches, <code>node_modules</code>, <code>.git</code>, build folders, and system files — so scans stay fast and focused." }));
+      modal.appendChild(el("div", { class: "mactions" }, [
+        el("button", { class: "btn sm", onclick: closeModal, text: "Cancel" }),
+        el("button", { class: "btn primary sm", onclick: () => saveScope(roots, data.excludes), text: "Save & re-scan" }),
+      ]));
+    }
+    redraw();
+    clear(modalRoot);
+    modalRoot.appendChild(el("div", { class: "modal-wrap", onclick: (e) => { if (e.target.classList.contains("modal-wrap")) closeModal(); } }, [ modal ]));
+  }
+  async function saveScope(roots, excludes) {
+    if (!roots.length) { setToast("Add at least one folder to scan.", true); return; }
+    try {
+      await api("/api/scan-config", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ roots, excludes: excludes || [] }) });
+      closeModal(); setToast("Saved — re-scanning your folders…"); setScanning(true);
+    } catch (e) { setToast("Couldn't save: " + e.message, true); }
+  }
 
   // ---- "how do I run this?" — terminal-handoff explainers ---------------
   // The web UI never runs commands (read-only by design); these teach a
@@ -633,6 +696,7 @@
 
   // ---- boot ------------------------------------------------------------
   document.getElementById("add-secret-btn").addEventListener("click", openAddSecret);
+  document.getElementById("scope-btn").addEventListener("click", openScopePanel);
   document.addEventListener("keydown", (e) => { if (e.key !== "Escape") return; if (modalRoot.firstChild) closeModal(); else if (selectedId) closeDrawer(); });
   wireTheme(); wireViewToggle(); loadSecrets(); startEvents(); startHeartbeat();
 })();

@@ -247,6 +247,16 @@
   .helpcard b { color: var(--text); } .helpcard ul { margin: 8px 0 0; padding-left: 18px; } .helpcard li { margin-bottom: 3px; }
   .modal .mactions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 24px; }
 
+  /* scan-scope panel */
+  .scope-list { display: flex; flex-direction: column; gap: 7px; margin: 4px 0 14px; }
+  .scope-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
+  .scope-row .ci { display: inline-flex; color: var(--muted); flex-shrink: 0; }
+  .scope-row .scope-path { flex: 1; min-width: 0; font-size: 13px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scope-empty { font-size: 13px; color: var(--muted); padding: 10px 2px; }
+  .scope-add { display: flex; gap: 8px; margin-bottom: 12px; }
+  .scope-add .scope-input { flex: 1; font: inherit; font-size: 14px; background: var(--surface); color: var(--text); border: 1px solid var(--line-2); border-radius: 10px; padding: 9px 12px; outline: none; }
+  .scope-add .scope-input:focus { border-color: var(--blue); }
+
   @media (max-width: 620px) { .topbar { flex-wrap: wrap; padding: 12px 18px; } .page { padding: 8px 18px 80px; } .statement { font-size: 30px; } .figures { grid-template-columns: repeat(2, 1fr); } }
 </style>
 </head>
@@ -265,6 +275,9 @@
     <div class="spacer"></div>
     <button id="add-secret-btn" class="btn primary sm">+ Add a secret</button>
     <div class="watching" id="scan-status" title="Re-checks automatically whenever a watched file changes."><span class="live"></span><span id="scan-status-text">watching for changes</span></div>
+    <button id="scope-btn" class="iconbtn" title="Scan scope — choose which folders Rafter looks in" aria-label="Scan scope">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+    </button>
     <button id="theme-toggle" class="iconbtn" title="Toggle light / dark" aria-label="Toggle theme">
       <svg class="moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
       <svg class="sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>

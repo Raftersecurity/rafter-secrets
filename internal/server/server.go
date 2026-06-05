@@ -30,6 +30,11 @@ type Config struct {
 	Store *docstore.Store
 }
 
+// SetRescan installs the callback the scan-config endpoint fires after the
+// user changes scan scope in the UI. It's set after New (the rescanner is
+// built later in startup) but before Run, so there's no race with handlers.
+func (s *Server) SetRescan(fn func()) { s.rescan = fn }
+
 type Server struct {
 	httpSrv  *http.Server
 	listener net.Listener
@@ -38,6 +43,7 @@ type Server struct {
 	life     *lifecycle
 	bus      *eventbus.Bus
 	store    *docstore.Store
+	rescan   func()
 }
 
 // New binds to a random port on 127.0.0.1 and prepares (but does not start)
