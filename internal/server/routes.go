@@ -29,6 +29,11 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/secrets/{id}/annotation", s.handleSecretAnnotate)
 	mux.HandleFunc("POST /api/secrets/{id}/stale", s.handleSecretMarkStale)
 	mux.HandleFunc("POST /api/secrets/{id}/rotated", s.handleSecretMarkRotated)
+
+	// In-app fixes — the only endpoints that write user files (previewed,
+	// undoable; see docs/design/in-app-edits.md).
+	mux.HandleFunc("POST /api/secrets/{id}/secure", s.handleSecretSecure)
+	mux.HandleFunc("POST /api/undo", s.handleUndo)
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Raftersecurity/rafter-secrets/internal/docstore"
+	"github.com/Raftersecurity/rafter-secrets/internal/edit"
 	"github.com/Raftersecurity/rafter-secrets/internal/eventbus"
 )
 
@@ -28,6 +29,11 @@ type Config struct {
 	// /api/secrets and friends return 503 when nil; this matches Bus's
 	// "fail loud" pattern for misconfigured launches.
 	Store *docstore.Store
+
+	// EditEngine, if non-nil, returns an edit.Engine bound to the CURRENT
+	// scan roots (scope can change at runtime, so it's a factory). The in-app
+	// fix endpoints (secure/undo) use it; nil makes them return 503.
+	EditEngine func() *edit.Engine
 }
 
 // SetRescan installs the callback the scan-config endpoint fires after the
@@ -36,14 +42,15 @@ type Config struct {
 func (s *Server) SetRescan(fn func()) { s.rescan = fn }
 
 type Server struct {
-	httpSrv  *http.Server
-	listener net.Listener
-	token    string
-	url      string
-	life     *lifecycle
-	bus      *eventbus.Bus
-	store    *docstore.Store
-	rescan   func()
+	httpSrv    *http.Server
+	listener   net.Listener
+	token      string
+	url        string
+	life       *lifecycle
+	bus        *eventbus.Bus
+	store      *docstore.Store
+	rescan     func()
+	editEngine func() *edit.Engine
 }
 
 // New binds to a random port on 127.0.0.1 and prepares (but does not start)
@@ -61,11 +68,12 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	s := &Server{
-		listener: ln,
-		token:    tok,
-		life:     newLifecycle(cfg.IdleTimeout),
-		bus:      cfg.Bus,
-		store:    cfg.Store,
+		listener:   ln,
+		token:      tok,
+		life:       newLifecycle(cfg.IdleTimeout),
+		bus:        cfg.Bus,
+		store:      cfg.Store,
+		editEngine: cfg.EditEngine,
 	}
 	addr := ln.Addr().(*net.TCPAddr)
 	s.url = fmt.Sprintf("http://127.0.0.1:%d/?token=%s", addr.Port, tok)

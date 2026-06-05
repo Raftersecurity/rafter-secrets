@@ -339,7 +339,7 @@
     ]);
   }
   function renderFoot() {
-    return el("div", { class: "foot" }, [ el("span", { class: "sh", html: ICON.shield }), el("span", { text: "This view only reads — it never changes your files. Anything that does change a file is a deliberate, previewed step you run from the command line. Nothing ever leaves this computer." }) ]);
+    return el("div", { class: "foot" }, [ el("span", { class: "sh", html: ICON.shield }), el("span", { text: "Nothing ever leaves this computer. Rafter only looks — until you ask it to fix something, and every change is shown first and can be undone." }) ]);
   }
 
   // ---- reveal ----------------------------------------------------------
@@ -347,6 +347,56 @@
     if (revealed.has(s.id)) { revealed.delete(s.id); renderDrawer(); return; }
     try { const b = await api(`/api/secrets/${encodeURIComponent(s.id)}/reveal`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); revealed.set(s.id, b.value); renderDrawer(); }
     catch (e) { if (e.status === 422) setToast("No live value to show for this one.", true); else if (e.status === 410) setToast("That value just changed — refreshing.", true); else setToast("Couldn't read it: " + e.message, true); }
+  }
+
+  // ---- in-app fixes (preview → confirm → apply → undo) -----------------
+  // The fix is a button, never a terminal command. Every write is previewed
+  // server-side (apply:false), confirmed by the user, applied (apply:true),
+  // and offered back as an Undo. Goes through the same edit engine the CLI
+  // uses — backup, atomic write, verify, audit, undo.
+  async function secureFix(s) {
+    let prev;
+    try { prev = await api(`/api/secrets/${encodeURIComponent(s.id)}/secure`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apply: false }) }); }
+    catch (e) { setToast("Couldn't check that fix: " + e.message, true); return; }
+    const files = (prev && prev.files) || [];
+    if (!files.length) { setToast("Already locked down — only you can read it."); return; }
+    confirmFix({
+      title: "Lock down " + s.key_name + "?",
+      lead: "Only you will be able to read " + (files.length > 1 ? "these files" : "this file") + ". The secret itself doesn’t change, and you can undo it.",
+      detail: files.map((f) => splitPath(f.path).base + "   " + f.old_mode + " → " + f.new_mode),
+      confirmText: "Lock it down",
+      onConfirm: async () => {
+        try {
+          const r = await api(`/api/secrets/${encodeURIComponent(s.id)}/secure`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apply: true }) });
+          closeModal();
+          toastWithUndo("Locked down — only you can read it now.", r.op_id);
+          await loadSecrets(); renderDrawer();
+        } catch (e) { setToast("Couldn't apply that: " + e.message, true); }
+      },
+    });
+  }
+  function confirmFix(o) {
+    const modal = el("div", { class: "modal confirm" }, [
+      el("div", { class: "mhead" }, [ el("h2", { text: o.title }), el("button", { class: "btn ghost sm mclose", onclick: closeModal, text: "✕" }) ]),
+      el("p", { class: "msub", text: o.lead }),
+      (o.detail && o.detail.length) ? el("div", { class: "confirm-detail mono" }, o.detail.map((d) => el("div", { text: d }))) : null,
+      el("div", { class: "mactions" }, [
+        el("button", { class: "btn sm", onclick: closeModal, text: "Cancel" }),
+        el("button", { class: "btn primary sm", onclick: o.onConfirm, text: o.confirmText }),
+      ]),
+    ]);
+    clear(modalRoot);
+    modalRoot.appendChild(el("div", { class: "modal-wrap", onclick: (e) => { if (e.target.classList.contains("modal-wrap")) closeModal(); } }, [ modal ]));
+  }
+  function toastWithUndo(text, opId) {
+    const t = el("div", { class: "toast ok" }, [ el("span", { class: "ti", html: ICON.check }), document.createTextNode(text) ]);
+    if (opId) t.appendChild(el("button", { class: "toast-undo", text: "Undo", onclick: async () => {
+      t.remove();
+      try { await api("/api/undo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op_id: opId }) }); setToast("Undone."); await loadSecrets(); renderDrawer(); }
+      catch (e) { setToast("Couldn't undo: " + e.message, true); }
+    } }));
+    toastWrap.appendChild(t);
+    setTimeout(() => { t.style.transition = "opacity .3s"; t.style.opacity = "0"; setTimeout(() => t.remove(), 300); }, 9000);
   }
 
   // ---- drawer ----------------------------------------------------------
@@ -405,11 +455,6 @@
       body.appendChild(rotateGuide(s));
     }
 
-    body.appendChild(el("div", { class: "dactions" }, [
-      el("button", { class: "btn sm", title: "Bookkeeping only — record that you've already replaced this (do the replacing above first).", onclick: () => markRotated(s.id), text: "Mark as replaced" }),
-      isStale(s) ? el("button", { class: "btn sm", disabled: "", text: "Marked not in use" }) : el("button", { class: "btn sm", onclick: () => markStale(s.id), text: "I don't use this" }),
-    ]));
-
     drawerRoot.appendChild(scrim);
     drawerRoot.appendChild(el("div", { class: "drawer" }, [ body ]));
   }
@@ -419,16 +464,13 @@
     const ex = exposure(s);
     if (ex) {
       const danger = ex.level === "other";
-      const keyArg = /^[A-Za-z0-9_.-]+$/.test(s.key_name) ? s.key_name : shQuote(s.key_name);
-      const secureCmd = "rafter-secrets secure " + keyArg;
       out.push(el("div", { class: "finding " + (danger ? "danger" : "warn") }, [
         el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.warn }), document.createTextNode(danger ? "Any app or AI agent can read it" : "Your group can read it") ]),
         el("p", { class: "fb", html: (danger
           ? "The file <code>" + escapeHtml(splitPath(ex.path).base) + "</code> is readable by <b>any program you run</b>, including AI coding agents. "
           : "Other accounts in your group can read <code>" + escapeHtml(splitPath(ex.path).base) + "</code>. ")
-          + "Rafter can lock it down for you — it changes who can open the file, never the secret, and it’s undoable." }),
-        el("div", { class: "fact" }, [ el("button", { class: "btn sm", onclick: () => copy(secureCmd, "Command copied"), text: "Lock it down" }), el("span", { class: "hint", html: "runs <code>rafter-secrets secure</code>" }) ]),
-        howToRun("That command locks the file to you only — it never changes, moves, or uploads the secret, and you can reverse it with rafter-secrets undo."),
+          + "Lock it down and only you can read it — the secret itself doesn’t change, and you can undo it." }),
+        el("div", { class: "fact" }, [ el("button", { class: "btn primary sm", onclick: () => secureFix(s), text: "Lock it down" }), el("span", { class: "hint", text: "previewed first · undoable" }) ]),
       ]));
     }
     if (isDuplicated(s)) out.push(el("div", { class: "finding warn" }, [ el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.copy }), document.createTextNode("Saved in " + fileLocations(s).length + " files") ]), el("p", { class: "fb", text: "Replace it once and you'll need to update every copy, or the apps using the old ones break." }) ]));

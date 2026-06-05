@@ -14,6 +14,7 @@ import (
 
 	"github.com/Raftersecurity/rafter-secrets/internal/browser"
 	"github.com/Raftersecurity/rafter-secrets/internal/docstore"
+	"github.com/Raftersecurity/rafter-secrets/internal/edit"
 	"github.com/Raftersecurity/rafter-secrets/internal/eventbus"
 	rescanpkg "github.com/Raftersecurity/rafter-secrets/internal/rescan"
 	"github.com/Raftersecurity/rafter-secrets/internal/scan"
@@ -103,6 +104,13 @@ func main() {
 		IdleTimeout: *idleTimeout,
 		Bus:         bus,
 		Store:       store,
+		// In-app fixes go through the same edit engine the CLI uses, bound to
+		// the CURRENT scan roots (scope can change at runtime via the UI).
+		EditEngine: func() *edit.Engine {
+			var roots []string
+			store.Read(func(g *storage.Global) { roots = append(roots, g.ScanConfig.Roots...) })
+			return edit.New(filepath.Dir(storePath), canonRoots(roots))
+		},
 	})
 	if err != nil {
 		log.Fatalf("rafter-secrets: %v", err)
