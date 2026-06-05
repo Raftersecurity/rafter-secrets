@@ -89,7 +89,22 @@
   function isDuplicated(s) { return fileLocations(s).length > 1; }
   function isStale(s) { return !!(s.annotation && s.annotation.stale); }
   function projectsOf(s) { return (s.annotation && s.annotation.tags) || []; }
-  function needsAttention(s) { return !isStale(s) && (!!exposure(s) || isDuplicated(s)); }
+  function hasWarnings(s) { return !isStale(s) && (!!exposure(s) || isDuplicated(s)); }
+  function needsAttention(s) { return hasWarnings(s) && !isIgnored(s); }
+
+  // ---- ignored warnings (UI-local) -------------------------------------
+  // "Ignore" is a per-secret acknowledgement: it drops the secret out of
+  // "Worth a look" and softens its pill, but never hides the underlying
+  // finding (the drawer still spells it out). Kept in localStorage like
+  // the view/theme prefs — it's a local, single-user app, so this is a
+  // display preference, not a change to the inventory the CLI reads.
+  // Keyed by secret id (a fingerprint, not a value); a rotated secret gets
+  // a new id, so its warnings correctly resurface.
+  let ignoredSet = loadIgnored();
+  function loadIgnored() { try { return new Set(JSON.parse(localStorage.getItem("rafter.ignored") || "[]")); } catch (_) { return new Set(); } }
+  function persistIgnored() { try { localStorage.setItem("rafter.ignored", JSON.stringify(Array.from(ignoredSet))); } catch (_) {} }
+  function isIgnored(s) { return ignoredSet.has(s.id); }
+  function setIgnored(s, on) { if (on) ignoredSet.add(s.id); else ignoredSet.delete(s.id); persistIgnored(); render(); if (selectedId) renderDrawer(); }
 
   // ---- project suggestions ("which repo does this live in?") -----------
   // The scanner doesn't tag a git root, so we infer the project from the
@@ -252,7 +267,12 @@
     const sub = el("div", { class: "rsub" }, [ el("span", { text: contextLabel(s) }), el("span", { class: "sdot" }), el("code", { text: s.key_name }) ]);
     row.appendChild(el("div", { class: "rbody" }, [ el("div", { class: "rname", text: v.name }), sub ]));
 
-    row.appendChild(el("div", { class: "rright" }, [ el("span", { class: "dots", text: "••••••" }), statusPill(s), el("span", { class: "chev", html: ICON.chev }) ]));
+    const rright = el("div", { class: "rright" });
+    if (flagged) rright.appendChild(el("button", { class: "btn ghost sm rowig", title: "Ignore this — move it out of “Worth a look”", onclick: (e) => { e.stopPropagation(); setIgnored(s, true); setToast("Warning ignored — it’s under “Everything else” now."); } }, [ document.createTextNode("Ignore") ]));
+    rright.appendChild(el("span", { class: "dots", text: "••••••" }));
+    rright.appendChild(statusPill(s));
+    rright.appendChild(el("span", { class: "chev", html: ICON.chev }));
+    row.appendChild(rright);
     row.addEventListener("click", () => openDrawer(s.id));
     return row;
   }
@@ -279,6 +299,7 @@
 
   function statusPill(s) {
     if (isStale(s)) return pill("muted", "Not in use");
+    if (isIgnored(s) && hasWarnings(s)) return pill("muted", "Warning ignored");
     const ex = exposure(s);
     if (ex && ex.level === "other") return pill("danger", "Any app can read this");
     if (ex && ex.level === "group") return pill("warn", "Readable by your group");
@@ -357,7 +378,19 @@
     const findings = buildFindings(s);
     body.appendChild(el("div", { class: "blk-h", text: "What this means" }));
     if (!findings.length) body.appendChild(el("div", { class: "finding ok" }, [ el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.check }), document.createTextNode(isManual(s) ? "Tracked by you." : "Looks fine.") ]), el("p", { class: "fb", text: isManual(s) ? "You added this by hand. Keep a note of where it lives below." : "Stored in a file only you can read, and only found in one place." }) ]));
-    else findings.forEach((f) => body.appendChild(f));
+    else {
+      const ign = isIgnored(s);
+      if (ign) body.appendChild(el("div", { class: "ignbanner" }, [
+        el("span", { class: "ii", html: ICON.muted }),
+        document.createTextNode("You’re ignoring " + (findings.length > 1 ? "these — they’re" : "this — it’s") + " hidden from “Worth a look”. "),
+        el("a", { href: "#", onclick: (e) => { e.preventDefault(); setIgnored(s, false); }, text: "Show it again" }),
+      ]));
+      findings.forEach((f) => body.appendChild(f));
+      if (!ign) body.appendChild(el("div", { class: "ignore-act" }, [
+        el("button", { class: "btn ghost sm", onclick: () => setIgnored(s, true), text: "Ignore " + (findings.length > 1 ? "these warnings" : "this warning") }),
+        el("span", { class: "ignhint", text: "moves it out of “Worth a look”" }),
+      ]));
+    }
 
     body.appendChild(el("div", { class: "blk-h", text: "Projects" }));
     body.appendChild(renderProjectEditor(s));
@@ -553,6 +586,7 @@
     shield: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5 13 3.5v4c0 3.5-2.2 5.8-5 7-2.8-1.2-5-3.5-5-7v-4z"/></svg>',
     x: '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"/></svg>',
     repo: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3.5 2h7a1 1 0 0 1 1 1v11l-4-2-4 2V3a1 1 0 0 1 1-1z"/></svg>',
+    muted: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2.2-4 6-4 6 4 6 4-2.2 4-6 4a6.5 6.5 0 0 1-3-.7"/><path d="M2 2l12 12"/></svg>',
   };
 
   // ---- boot ------------------------------------------------------------

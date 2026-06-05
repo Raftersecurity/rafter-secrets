@@ -124,6 +124,9 @@
   .row .rsub .sdot { width: 3px; height: 3px; border-radius: 50%; background: var(--faint); flex-shrink: 0; }
   .row .rsub code { font-family: var(--mono); font-size: 11.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row .rright { display: flex; align-items: center; gap: 14px; justify-content: flex-end; }
+  .row .rowig { opacity: 0; transition: opacity .14s, background .14s, color .14s, border-color .14s; }
+  .row:hover .rowig, .row .rowig:focus-visible { opacity: 1; }
+  @media (hover: none) { .row .rowig { opacity: 1; } }
   .row .dots { font-family: var(--mono); letter-spacing: 2px; color: var(--faint); font-size: 13px; opacity: 0.8; }
   .row .chev { color: var(--faint); display: flex; transition: transform .14s; }
   .row:hover .chev { transform: translateX(2px); color: var(--muted); }
@@ -190,6 +193,10 @@
   .finding.warn { border-color: var(--amber-line); background: var(--amber-bg); } .finding.warn .fh { color: var(--amber); }
   .finding.info { border-color: var(--blue-line); background: var(--blue-bg); } .finding.info .fh { color: var(--blue); }
   .finding.ok { border-color: var(--green-line); background: var(--green-bg); } .finding.ok .fh { color: var(--green); }
+  .ignbanner { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 12.5px; color: var(--muted); background: var(--surface-h); border: 1px solid var(--line); border-radius: 11px; padding: 10px 13px; margin-bottom: 12px; }
+  .ignbanner .ii { display: inline-flex; color: var(--faint); flex-shrink: 0; } .ignbanner a { font-weight: 550; }
+  .ignore-act { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; margin-top: 2px; }
+  .ignore-act .ignhint { font-size: 12px; color: var(--faint); }
   .locs { list-style: none; margin: 0; padding: 0; }
   .locs li { display: flex; align-items: flex-start; gap: 11px; padding: 11px 0; border-top: 1px solid var(--line); } .locs li:first-child { border-top: none; }
   .locs .li-ico { color: var(--muted); display: flex; flex-shrink: 0; margin-top: 1px; }
