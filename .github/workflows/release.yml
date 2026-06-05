@@ -1,0 +1,59 @@
+# Rafter Secrets release — build the static binaries and publish them to a
+# GitHub Release on a version tag. This is what `npx skills add` / the install
+# docs point at, so the binaries must be reproducible and checksummed.
+#
+# Trigger: push a tag like `v0.1.0`.
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# Tags don't run ci.yml, so this job re-runs the test + zero-mutation gates
+# before it builds — we never publish a binary that didn't pass them.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+# Least privilege: only the publish job needs write, and only to releases.
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: build + publish binaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the GitHub Release + upload assets
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: go.sum
+
+      # Gate the release on the same checks main is held to.
+      - name: Test
+        run: go test -count=1 -timeout 120s ./...
+
+      - name: Zero-mutation guarantees
+        run: |
+          bash scripts/no-write-syscalls.sh
+          go test -count=1 -timeout 60s ./tests/invariant/...
+
+      - name: Build all targets
+        run: make build-all   # -> dist/rafter-secrets-{darwin,linux}-{amd64,arm64}
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum rafter-secrets-* > SHA256SUMS
+
+      # Use the built-in gh CLI + GITHUB_TOKEN rather than a third-party
+      # action, so the release job pulls in no extra supply-chain surface.
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/rafter-secrets-* dist/SHA256SUMS \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes
