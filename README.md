@@ -39,14 +39,35 @@ Rafter Secrets is the inventory and hygiene tool for that problem:
 
 ## Install
 
+**Prebuilt binary — no toolchain needed.** Download the asset for your OS/arch
+from the [latest release](https://github.com/Raftersecurity/rafter-secrets/releases/latest)
+(`rafter-secrets-{darwin,linux}-{amd64,arm64}`):
+
 ```bash
-# Homebrew (coming soon) / direct download from Releases:
-#   https://github.com/Raftersecurity/rafter-secrets/releases
+# Example — macOS, Apple Silicon. Pick the asset that matches your machine.
+curl -fL -o rafter-secrets \
+  https://github.com/Raftersecurity/rafter-secrets/releases/latest/download/rafter-secrets-darwin-arm64
+chmod +x rafter-secrets
 
-# From source (Go 1.22+):
+# Optional but recommended — verify against the release's SHA256SUMS:
+#   shasum -a 256 rafter-secrets    # compare the hash to the SHA256SUMS asset
+
+./rafter-secrets
+```
+
+> **macOS Gatekeeper:** the binary isn't notarized yet, so macOS may say it's
+> from an unidentified developer. Right-click → **Open**, or run
+> `xattr -d com.apple.quarantine rafter-secrets` once, to allow it.
+
+**With Go (1.22+):**
+
+```bash
 go install github.com/Raftersecurity/rafter-secrets/cmd/rafter-secrets@latest
+```
 
-# Or build the repo:
+**From source:**
+
+```bash
 git clone https://github.com/Raftersecurity/rafter-secrets && cd rafter-secrets
 make build        # -> dist/rafter-secrets
 ```
@@ -54,7 +75,7 @@ make build        # -> dist/rafter-secrets
 ## Quickstart
 
 ```bash
-rafter-secrets            # first run sets your scan scope, then opens the web app
+rafter-secrets            # first run picks sensible defaults, then opens the web app
 rafter-secrets scan       # or stay in the terminal: scan + inventory
 rafter-secrets list
 ```
