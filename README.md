@@ -65,6 +65,23 @@ inventory built for people who have never opened a terminal: see your secrets,
 group and tag them, keep notes. Running it with a command makes it a CLI — which
 is also where any *changes* (rotate / add / remove) happen, entirely locally.
 
+## Add it to your AI agent
+
+Use a coding agent (Claude Code, Cursor, OpenCode, …)? Install the Rafter Secrets
+**skill** and your agent can run the audit for you — find exposed keys, fix file
+permissions, and walk you through rotating a leaked key:
+
+```bash
+npx skills add Raftersecurity/rafter-secrets
+```
+
+The skill is **audit-and-fix only, by design**: it lets the agent see *which*
+keys are exposed and help you lock them down, but it **never** pulls a secret
+*value* into the agent's context (no `reveal`) — because handing your secrets to
+an AI agent is the exact risk this tool exists to flag. See
+[`skills/rafter-secrets/SKILL.md`](skills/rafter-secrets/SKILL.md) and the
+[design notes](docs/design/agent-skill.md).
+
 ## The CLI (built for agents)
 
 Every command takes `--json` for machine-readable output. Edits read the new value
