@@ -91,6 +91,48 @@
   function projectsOf(s) { return (s.annotation && s.annotation.tags) || []; }
   function needsAttention(s) { return !isStale(s) && (!!exposure(s) || isDuplicated(s)); }
 
+  // ---- project suggestions ("which repo does this live in?") -----------
+  // The scanner doesn't tag a git root, so we infer the project from the
+  // path: a *project-local* dotenv (.env / .env.* / .envrc) sits at the
+  // root of a repo, and that repo's folder name is almost always the
+  // GitHub repo name. Home-level config dirs (~/.aws, ~/.config, …) and
+  // the home root itself are skipped — those aren't project-scoped.
+  function repoNameFromPath(path) {
+    if (!path) return null;
+    const i = path.lastIndexOf("/");
+    if (i < 0) return null;
+    const base = path.slice(i + 1);
+    if (!/^\.env(\.|rc$|$)/.test(base)) return null;       // project-local dotenv only
+    const dir = path.slice(0, i);
+    const seg = dir.slice(dir.lastIndexOf("/") + 1);
+    if (!seg || seg[0] === ".") return null;               // skip ~/.config-style dirs
+    if (state.scan_home && dir === state.scan_home) return null; // skip the home root
+    return seg;
+  }
+  // Repo names this particular secret lives in.
+  function repoNamesFor(s) { const out = []; for (const f of fileLocations(s)) { const n = repoNameFromPath(f.path); if (n && out.indexOf(n) < 0) out.push(n); } return out; }
+  // Every project name we could offer: ones already used to tag a secret,
+  // plus every repo folder we can infer from a dotenv path across the scan.
+  function knownProjects() {
+    const out = [], seen = new Set();
+    const push = (n) => { if (!n) return; const k = n.toLowerCase(); if (seen.has(k)) return; seen.add(k); out.push(n); };
+    for (const o of state.secrets) projectsOf(o).forEach(push);
+    for (const o of state.secrets) repoNamesFor(o).forEach(push);
+    return out;
+  }
+  // Ranked suggestions for one secret: its own repo(s) first (flagged as
+  // repo-derived for the icon), then other known projects — minus any it
+  // already carries.
+  function projectSuggestions(s) {
+    const have = new Set(projectsOf(s).map((p) => p.toLowerCase()));
+    const out = [], seen = new Set();
+    const push = (name, fromRepo) => { if (!name) return; const k = name.toLowerCase(); if (have.has(k) || seen.has(k)) return; seen.add(k); out.push({ name, fromRepo }); };
+    repoNamesFor(s).forEach((n) => push(n, true));
+    const ownRepos = new Set(repoNamesFor(s).map((n) => n.toLowerCase()));
+    knownProjects().forEach((n) => push(n, ownRepos.has(n.toLowerCase())));
+    return out.slice(0, 6);
+  }
+
   // ---- data ------------------------------------------------------------
   async function loadSecrets() {
     try {
@@ -261,8 +303,9 @@
     const groups = new Map(); const untagged = [];
     for (const s of secrets) { const ps = projectsOf(s); if (!ps.length) { untagged.push(s); continue; } for (const p of ps) { if (!groups.has(p)) groups.set(p, []); groups.get(p).push(s); } }
     const out = [];
+    out.push(el("div", { class: "viewnote", html: "Grouped by <b>project</b>. Open any secret to tag it — we suggest the repo it lives in, so bucketing is usually one click." }));
     for (const name of Array.from(groups.keys()).sort()) { out.push(section(name, groups.get(name).length, null)); out.push(renderList(groups.get(name).sort(byName), false)); }
-    if (untagged.length) { out.push(section("No project yet", untagged.length, "tag a secret to group it")); out.push(renderList(untagged.sort(byName), false)); }
+    if (untagged.length) { out.push(section("No project yet", untagged.length, "open one to bucket it")); out.push(renderList(untagged.sort(byName), false)); }
     return out;
   }
 
@@ -367,6 +410,7 @@
   function keystoreName(k) { return /keychain/i.test(k) ? "macOS Keychain" : "System keyring"; }
 
   function renderProjectEditor(s) {
+    const box = el("div");
     const wrap = el("div", { class: "chips" });
     const ps = projectsOf(s);
     for (const p of ps) wrap.appendChild(el("span", { class: "tag" }, [ document.createTextNode(p), el("span", { class: "x", title: "Remove", html: ICON.x, onclick: () => setProjects(s, ps.filter((x) => x !== p)) }) ]));
@@ -379,7 +423,23 @@
       input.addEventListener("blur", commit);
     });
     wrap.appendChild(add);
-    return wrap;
+    box.appendChild(wrap);
+
+    // One-click suggestions, repo-derived names first (with a repo icon).
+    const sugg = projectSuggestions(s);
+    if (sugg.length) {
+      const row = el("div", { class: "suggests" }, [ el("span", { class: "slabel", text: "Suggested" }) ]);
+      for (const g of sugg) {
+        const chip = el("span", { class: "tag suggest", title: g.fromRepo ? "From the repo this secret lives in" : "Used on your other secrets" }, [
+          g.fromRepo ? el("span", { class: "gh", html: ICON.repo }) : null,
+          document.createTextNode(g.name),
+        ]);
+        chip.addEventListener("click", () => setProjects(s, projectsOf(s).concat([g.name])));
+        row.appendChild(chip);
+      }
+      box.appendChild(row);
+    }
+    return box;
   }
   async function setProjects(s, projects) {
     const a = s.annotation || {};
@@ -428,13 +488,22 @@
       el("div", { class: "helpcard", html: "<b>Worth tracking:</b> API keys & tokens (Stripe, OpenAI, GitHub…), database & service passwords, cloud credentials, signing & SSH keys. Note <b>where it came from</b>, <b>where to replace it</b>, and its <b>project</b>." }),
       el("div", { class: "form" }, [
         field("Name", "key_name", "e.g. STRIPE_LIVE_KEY", "What you'll recognise it by."),
-        field("Project", "project", "e.g. naledi  (optional)", "Group it with related secrets."),
+        field("Project", "project", "start typing — your repos are suggested  (optional)", "Group it with related secrets. Names from your repos and existing projects autocomplete."),
         field("Where does it live?", "path", "e.g. ~/code/app/.env  (optional)", "Just a note — nothing is opened."),
         field("Where do you replace it?", "rotate_url", "https://…  (optional)", null),
         field("Notes", "notes", "optional", null, true),
       ]),
       el("div", { class: "mactions" }, [ el("button", { class: "btn sm", onclick: closeModal, text: "Cancel" }), el("button", { class: "btn primary sm", onclick: () => submitAdd(f), text: "Add secret" }) ]),
     ]);
+    // Native autocomplete for the project field: known projects + repos.
+    const projects = knownProjects();
+    if (projects.length) {
+      const dl = el("datalist", { id: "proj-suggest" });
+      for (const p of projects) dl.appendChild(el("option", { value: p }));
+      f.project.setAttribute("list", "proj-suggest");
+      f.project.setAttribute("autocomplete", "off");
+      modal.appendChild(dl);
+    }
     clear(modalRoot); modalRoot.appendChild(el("div", { class: "modal-wrap", onclick: (e) => { if (e.target.classList.contains("modal-wrap")) closeModal(); } }, [ modal ]));
     f.key_name.focus();
   }
@@ -483,6 +552,7 @@
     chev: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     shield: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5 13 3.5v4c0 3.5-2.2 5.8-5 7-2.8-1.2-5-3.5-5-7v-4z"/></svg>',
     x: '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"/></svg>',
+    repo: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3.5 2h7a1 1 0 0 1 1 1v11l-4-2-4 2V3a1 1 0 0 1 1-1z"/></svg>',
   };
 
   // ---- boot ------------------------------------------------------------
