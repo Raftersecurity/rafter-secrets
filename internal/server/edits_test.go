@@ -176,6 +176,27 @@ func TestRotateEndpoint_PreviewApplyUndo(t *testing.T) {
 	}
 }
 
+func TestOpenEndpoint_Validation(t *testing.T) {
+	s, ts, store, _ := newTestServerWithStore(t)
+	if err := store.Update(func(g *storage.Global) bool {
+		g.Secrets = append(g.Secrets,
+			storage.Secret{ID: "absmiss", KeyName: "K", FoundIn: []storage.FoundIn{{SourceType: storage.SourceEnvFile, Path: "/no/such/rafter-test-file.env"}}},
+			storage.Secret{ID: "dash", KeyName: "K2", FoundIn: []storage.FoundIn{{SourceType: storage.SourceManual, Path: "--malicious"}}},
+		)
+		return true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Not a tracked path → 404 (the allowlist).
+	doJSON(t, authedReq(t, "POST", ts.URL+"/api/open", s.token, []byte(`{"path":"/etc/passwd"}`)), 404)
+	// Tracked + absolute but the file doesn't exist → 400.
+	doJSON(t, authedReq(t, "POST", ts.URL+"/api/open", s.token, []byte(`{"path":"/no/such/rafter-test-file.env"}`)), 400)
+	// Tracked but option-like / non-absolute → 400 (no flag injection into the opener).
+	doJSON(t, authedReq(t, "POST", ts.URL+"/api/open", s.token, []byte(`{"path":"--malicious"}`)), 400)
+	// Empty → 400.
+	doJSON(t, authedReq(t, "POST", ts.URL+"/api/open", s.token, []byte(`{"path":""}`)), 400)
+}
+
 func TestSecureEndpoint_Disabled503(t *testing.T) {
 	s, ts, _, _ := newTestServerWithStore(t)
 	// editEngine left nil → edits unavailable.

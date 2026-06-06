@@ -14,6 +14,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
 
 	"github.com/Raftersecurity/rafter-secrets/internal/edit"
 	"github.com/Raftersecurity/rafter-secrets/internal/storage"
@@ -28,6 +32,79 @@ func effectiveKind(s *storage.Secret) string {
 		return "env"
 	}
 	return "secret"
+}
+
+type openRequest struct {
+	Path string `json:"path"`
+}
+
+// handleOpenFile opens a tracked secret file in the user's default editor (the
+// "Open" button on each file location). The path must be one Rafter already
+// tracks — we never open an arbitrary path the caller hands us — and the OS
+// opener is launched without a shell.
+func (s *Server) handleOpenFile(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeJSONErr(w, http.StatusServiceUnavailable, "store not configured")
+		return
+	}
+	var req openRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+		return
+	}
+	if req.Path == "" {
+		writeJSONErr(w, http.StatusBadRequest, "missing path")
+		return
+	}
+	// Only a path Rafter is already tracking may be opened.
+	known := false
+	s.store.Read(func(g *storage.Global) {
+		for i := range g.Secrets {
+			for _, f := range g.Secrets[i].FoundIn {
+				if f.Path != "" && f.Path == req.Path {
+					known = true
+					return
+				}
+			}
+		}
+	})
+	if !known {
+		writeJSONErr(w, http.StatusNotFound, "not a tracked file")
+		return
+	}
+	// The tracked-path set is partly caller-populated (manual secrets store an
+	// unvalidated path), so harden here: require an absolute path — which can't
+	// start with '-', so it can never be read as an option by the OS opener —
+	// and confirm it's a real regular file.
+	if !filepath.IsAbs(req.Path) || strings.HasPrefix(req.Path, "-") {
+		writeJSONErr(w, http.StatusBadRequest, "can only open an absolute file path")
+		return
+	}
+	if fi, err := os.Stat(req.Path); err != nil || !fi.Mode().IsRegular() {
+		writeJSONErr(w, http.StatusBadRequest, "not a readable file")
+		return
+	}
+	if err := openExternally(req.Path); err != nil {
+		writeJSONErr(w, http.StatusInternalServerError, "couldn't open it: "+err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// openExternally launches the OS default handler for path (the user's editor for
+// a text file). No shell — the path is passed as a single argument. Start, not
+// Run, so we don't block on the editor staying open.
+func openExternally(path string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", path)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", path)
+	default: // linux, *bsd — "--" so a path is never read as an option
+		cmd = exec.Command("xdg-open", "--", path)
+	}
+	return cmd.Start()
 }
 
 // exposedMode reports whether path is group- or other-readable (the "any app
