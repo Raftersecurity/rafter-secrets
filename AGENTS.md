@@ -26,6 +26,7 @@ The binary is agent-first. Prefer it over the web UI.
 | `list` | `secrets[]` = `{id, key, files[], projects[], stale}` |
 | `show <key>` | `secret` (full record) |
 | `reveal <key>` | `key`, `value` |
+| `run <key>… -- cmd` | runs `cmd` with the secret(s) injected into its env; value never printed (no JSON) |
 | `rotate <key> [--yes]` | `op`, `key`, `op_id`, `applied`, `files[]` |
 | `add <key> --file <p> [--yes]` | same shape |
 | `rm <key> [--yes]` | same shape |

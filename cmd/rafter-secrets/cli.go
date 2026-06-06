@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -25,6 +26,7 @@ var subcommands = map[string]func([]string) int{
 	"show":    cmdShow,
 	"reveal":  cmdReveal,
 	"secure":  cmdSecure,
+	"run":     cmdRun,
 	"rotate":  cmdRotate,
 	"add":     cmdAdd,
 	"rm":      cmdRemove,
@@ -61,6 +63,9 @@ Commands:
   list              List tracked secrets
   show <key>        Show one secret: where it lives, projects, status
   reveal <key>      Print a secret's current value (reads it from disk)
+  run <key>… -- cmd Run a command with the named secret(s) injected into its
+                    environment — the value goes into the child process, never
+                    onto your screen, into logs, or an AI agent's context
   secure <key>      Lock a secret's files to owner-only (chmod 600) so other
                     apps and users can't read them
   rotate <key>      Replace a secret's value everywhere it appears
@@ -419,6 +424,78 @@ func reportSecure(jsonOut bool, res *edit.Result) int {
 		fmt.Printf("\nDone — other apps and users can no longer read these. Undo with: rafter-secrets undo %s\n", res.OpID)
 	}
 	return 0
+}
+
+// cmdRun resolves the named secrets and runs a command with them injected into
+// its environment. The value lives only in the child process — it never touches
+// stdout, argv, logs, or an agent's context. This is the access primitive that
+// lets agents (and humans) USE a secret without ever reading its value: the
+// elegant answer to "how can an agent access it" — it can't, but it can run a
+// program that has it. Read → inject → forget; Rafter never persists the value.
+//
+//	rafter-secrets run STRIPE_LIVE_KEY -- node server.js
+func cmdRun(args []string) int {
+	sep := -1
+	for i, a := range args {
+		if a == "--" {
+			sep = i
+			break
+		}
+	}
+	if sep < 0 || sep == len(args)-1 {
+		return fail(false, 2, "usage: rafter-secrets run KEY [KEY...] -- command [args...]")
+	}
+	keys, cmdline := args[:sep], args[sep+1:]
+	if len(keys) == 0 {
+		return fail(false, 2, "name at least one secret to inject (e.g. run STRIPE_KEY -- your-cmd)")
+	}
+
+	env, err := loadEnv(false)
+	if err != nil {
+		return fail(false, 1, err.Error())
+	}
+	childEnv := os.Environ()
+	var injected []string
+	for _, k := range keys {
+		s, err := env.findSecret(k, "")
+		if err != nil {
+			return fail(false, 2, err.Error())
+		}
+		val, ok := resolveAnyFileValue(s)
+		if !ok {
+			return fail(false, 1, "couldn't read a value for "+k+" (no readable file source)")
+		}
+		childEnv = append(childEnv, s.KeyName+"="+val)
+		injected = append(injected, s.KeyName)
+	}
+	// Names only — never the values.
+	fmt.Fprintf(os.Stderr, "rafter-secrets: injected %s into the environment of %q (value never printed)\n",
+		strings.Join(injected, ", "), cmdline[0])
+
+	c := exec.Command(cmdline[0], cmdline[1:]...) // no shell — args passed directly
+	c.Env = childEnv
+	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := c.Run(); err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return ee.ExitCode()
+		}
+		return fail(false, 1, "couldn't run "+cmdline[0]+": "+err.Error())
+	}
+	return 0
+}
+
+// resolveAnyFileValue reads the secret's value from its first readable file
+// source (never a manual entry).
+func resolveAnyFileValue(s *storage.Secret) (string, bool) {
+	for _, f := range s.FoundIn {
+		if f.Path == "" || f.SourceType == storage.SourceManual {
+			continue
+		}
+		if v, err := scan.ResolveValue(f, s.KeyName); err == nil {
+			return v, true
+		}
+	}
+	return "", false
 }
 
 func cmdRotate(args []string) int { return editCmd("rotate", args) }

@@ -31,6 +31,10 @@ must never pull a secret value into this conversation.**
   typed by the **user** into a `stdin` pipe — they never pass through you, and
   never go in a command argument (`--value`, here-strings) where `ps`/shell
   history would capture them.
+- ✅ To *use* a secret in a command, **don't read it — inject it**:
+  `rafter-secrets run KEY -- <cmd>` runs the command with the value in its
+  environment, so it never enters your context. That's how an agent uses a
+  secret without ever seeing it.
 - ✅ You **may** read the *inventory*: `list --json` and `show` return key
   names, file paths, projects, and status — **never values**. Work from those.
   (`show` may include a short *masked* preview; treat those characters as
@@ -135,6 +139,7 @@ that the value must never be pasted into a chat with you.
 | `list` | `secrets[]` = `{id, key, files[], projects[], stale}` — no values |
 | `show <key>` | one secret's record (paths, projects; masked preview only) |
 | `secure <key>` | lock the key's files to owner-only / chmod 600 (previewed, `--yes` to apply, undoable) |
+| `run <key>… -- cmd` | run a command with the secret(s) injected into its env — the value goes into the child process, **never** your context |
 | `rotate <key>` | replace value everywhere (value on **stdin**; `--yes` to apply) |
 | `add <key> --file <p>` | track a new secret (value on stdin) |
 | `rm <key>` | remove a secret from its files |
