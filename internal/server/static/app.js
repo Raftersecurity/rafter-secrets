@@ -89,7 +89,7 @@
   function isDuplicated(s) { return fileLocations(s).length > 1; }
   function isStale(s) { return !!(s.annotation && s.annotation.stale); }
   function projectsOf(s) { return (s.annotation && s.annotation.tags) || []; }
-  function hasWarnings(s) { return !isStale(s) && (!!exposure(s) || isDuplicated(s)); }
+  function hasWarnings(s) { return !isStale(s) && (!!exposure(s) || isDuplicated(s) || isExpiringSoon(s)); }
   function needsAttention(s) { return hasWarnings(s) && !isIgnored(s); }
 
   // ---- ignored warnings (UI-local) -------------------------------------
@@ -116,11 +116,20 @@
   function effectiveKind(s) { return (s.annotation && s.annotation.override_kind) || s.kind || "secret"; }
   function isEnv(s) { return effectiveKind(s) === "env"; }
   function lensSecrets() { return state.secrets.filter((s) => lens === "env" ? isEnv(s) : !isEnv(s)); }
+  // annotationBody builds the FULL annotation. The server does a full replace,
+  // so every writer must send all fields or it would wipe the others.
+  function annotationBody(s, over) {
+    const a = s.annotation || {};
+    return Object.assign({ source_url: a.source_url || "", owner: a.owner || "", notes: a.notes || "", rotate_url: a.rotate_url || "", tags: projectsOf(s), override_kind: a.override_kind || "", expires_at: a.expires_at || "", scope: a.scope || "" }, over || {});
+  }
+  // ---- expiry (optional, proactive) ------------------------------------
+  function expiryDate(s) { const v = s.annotation && s.annotation.expires_at; if (!v) return null; const d = new Date(v + "T00:00:00"); return isNaN(d.getTime()) ? null : d; }
+  function daysUntilExpiry(s) { const d = expiryDate(s); if (!d) return null; return Math.ceil((d.getTime() - Date.now()) / 86400000); }
+  function isExpiringSoon(s) { if (isStale(s)) return false; const n = daysUntilExpiry(s); return n !== null && n <= 30; }
   async function setOverrideKind(s, kind) {
     const a = s.annotation || {};
-    const ann = { source_url: a.source_url || "", owner: a.owner || "", notes: a.notes || "", rotate_url: a.rotate_url || "", tags: projectsOf(s), override_kind: kind };
     try {
-      await api(`/api/secrets/${encodeURIComponent(s.id)}/annotation`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ann) });
+      await api(`/api/secrets/${encodeURIComponent(s.id)}/annotation`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(annotationBody(s, { override_kind: kind })) });
       s.annotation = Object.assign({}, a, { override_kind: kind });
       setToast(kind === "env" ? "Moved to Environment." : kind === "secret" ? "Moved to Secrets." : "Reset to auto.");
       render(); if (selectedId) renderDrawer();
@@ -360,6 +369,7 @@
     if (ex && ex.level === "other") return pill("danger", "Any app can read this");
     if (ex && ex.level === "group") return pill("warn", "Readable by your group");
     if (isDuplicated(s)) return pill("info", "Saved in " + fileLocations(s).length + " places");
+    if (isExpiringSoon(s)) { const n = daysUntilExpiry(s); return pill(n < 0 ? "danger" : "warn", n < 0 ? "Expired" : n === 0 ? "Expires today" : "Expires in " + n + "d"); }
     if (isManual(s)) return pill("manual", "You're tracking this");
     return pill("ok", "Private to you");
   }
@@ -615,6 +625,7 @@
       ]));
     }
     if (isDuplicated(s)) out.push(el("div", { class: "finding warn" }, [ el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.copy }), document.createTextNode("Saved in " + fileLocations(s).length + " files") ]), el("p", { class: "fb", text: "Replace it once and you'll need to update every copy, or the apps using the old ones break." }) ]));
+    if (isExpiringSoon(s)) { const n = daysUntilExpiry(s); out.push(el("div", { class: "finding " + (n < 0 ? "danger" : "warn") }, [ el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.warn }), document.createTextNode(n < 0 ? "This key has expired" : "This key expires soon") ]), el("p", { class: "fb", text: n < 0 ? "It expired " + (-n) + " day" + (n === -1 ? "" : "s") + " ago — replace it and update where it's used." : "Expires in " + n + " day" + (n === 1 ? "" : "s") + ". Plan to replace it before then." }) ])); }
     return out;
   }
 
@@ -668,7 +679,7 @@
   }
   async function setProjects(s, projects) {
     const a = s.annotation || {};
-    const ann = { source_url: a.source_url || "", owner: a.owner || "", notes: a.notes || "", rotate_url: a.rotate_url || "", tags: projects };
+    const ann = annotationBody(s, { tags: projects });
     try { await api(`/api/secrets/${encodeURIComponent(s.id)}/annotation`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ann) }); s.annotation = Object.assign({}, a, ann); renderDrawer(); render(); }
     catch (e) { setToast("Couldn't update: " + e.message, true); }
   }
@@ -678,6 +689,9 @@
     const form = el("div", { class: "form" });
     form.appendChild(noteField("Where did this come from?", "source_url", a.source_url, "e.g. dashboard.stripe.com", "A link to where this key was created."));
     form.appendChild(noteField("Where do you replace it?", "rotate_url", a.rotate_url, "link to make a new one", "Where you'd go to rotate it."));
+    const exp = el("input", { type: "date" }); exp.value = a.expires_at || ""; exp.dataset.field = "expires_at"; exp.addEventListener("input", scheduleSave);
+    form.appendChild(el("label", {}, [ el("div", { class: "lbl" }, [ document.createTextNode("Expires"), el("span", { class: "help", title: "Optional. We’ll float it into “Worth a look” as the date nears.", text: "?" }) ]), exp ]));
+    form.appendChild(noteField("What can it do? (scope)", "scope", a.scope, "e.g. read-only · full access", "Optional. The key’s permissions — handy when deciding what to rotate first."));
     form.appendChild(noteField("Notes", "notes", a.notes, "anything future-you should know", null, true));
     form.appendChild(el("div", { class: "save-state", id: "save-state" }));
     const href = safeUrl(a.rotate_url);
@@ -695,7 +709,7 @@
   async function saveAnnotation() {
     if (!selectedId) return;
     const s = state.secrets.find((x) => x.id === selectedId);
-    const ann = { source_url: "", owner: "", notes: "", rotate_url: "", tags: projectsOf(s) };
+    const ann = annotationBody(s, {});
     for (const f of drawerRoot.querySelectorAll("[data-field]")) ann[f.dataset.field] = f.value;
     try { await api(`/api/secrets/${encodeURIComponent(selectedId)}/annotation`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ann) }); if (s) s.annotation = Object.assign({}, s.annotation, ann); setSaveState("saved"); setTimeout(() => { if (saveState === "saved") setSaveState("idle"); }, 1800); }
     catch (e) { setSaveState("err"); setToast("Couldn't save notes: " + e.message, true); }

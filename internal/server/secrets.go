@@ -241,6 +241,8 @@ type annotationPatch struct {
 	RotateURL    string   `json:"rotate_url"`
 	Tags         []string `json:"tags"`
 	OverrideKind string   `json:"override_kind"`
+	ExpiresAt    string   `json:"expires_at"`
+	Scope        string   `json:"scope"`
 }
 
 func (s *Server) handleSecretAnnotate(w http.ResponseWriter, r *http.Request) {
@@ -283,6 +285,8 @@ func (s *Server) handleSecretAnnotate(w http.ResponseWriter, r *http.Request) {
 			} else {
 				a.OverrideKind = ""
 			}
+			a.ExpiresAt = strings.TrimSpace(p.ExpiresAt)
+			a.Scope = p.Scope
 			// Stale is preserved; only the dedicated endpoint flips it.
 			found = true
 			return true

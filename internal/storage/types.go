@@ -117,6 +117,11 @@ type Annotation struct {
 	// pins the kind regardless of what classify() derived; empty means auto.
 	// Persists across rescans like the other annotation fields.
 	OverrideKind string `json:"override_kind,omitempty"`
+	// ExpiresAt is an optional ISO date ("2026-07-01"); an expired or
+	// soon-to-expire key floats into "Worth a look". Scope is an optional note
+	// of what the key can do (read-only / full / specific OAuth-IAM scopes).
+	ExpiresAt string `json:"expires_at,omitempty"`
+	Scope     string `json:"scope,omitempty"`
 }
 
 // ValueHistoryEntry records that a secret with this fingerprint was observed
