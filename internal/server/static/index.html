@@ -230,7 +230,9 @@
   .chip-input { font: inherit; font-size: 12px; width: 130px; background: var(--surface); color: var(--text); border: 1px solid var(--blue); border-radius: 999px; padding: 4px 11px; outline: none; }
   .form label { display: block; margin-bottom: 14px; }
   .form .lbl { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); margin-bottom: 5px; }
-  .form input, .form textarea { width: 100%; font: inherit; font-size: 13.5px; background: var(--surface); color: var(--text); border: 1px solid var(--line-2); border-radius: 10px; padding: 9px 11px; transition: border-color .14s; }
+  .form input, .form textarea, .form select { width: 100%; font: inherit; font-size: 13.5px; background: var(--surface); color: var(--text); border: 1px solid var(--line-2); border-radius: 10px; padding: 9px 11px; transition: border-color .14s; }
+  .form select { cursor: pointer; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 16 16' fill='none' stroke='%23737373' stroke-width='1.6'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 11px center; padding-right: 32px; }
+  .form .pathother { margin-top: 8px; }
   .form input::placeholder, .form textarea::placeholder { color: var(--faint); }
   .form input:focus, .form textarea:focus { outline: none; border-color: var(--blue); }
   .form textarea { min-height: 68px; resize: vertical; line-height: 1.5; }
@@ -264,7 +266,8 @@
   /* The Add-secret popup runs at a larger type scale than the dense list behind it. */
   .modal .form label { margin-bottom: 16px; }
   .modal .form .lbl { font-size: 13.5px; }
-  .modal .form input, .modal .form textarea { font-size: 15px; padding: 10px 13px; border-radius: 11px; }
+  .modal .form input, .modal .form textarea, .modal .form select { font-size: 15px; padding: 10px 13px; border-radius: 11px; }
+  .modal .form select { padding-right: 34px; }
   .modal .mactions .btn { font-size: 14px; padding: 9px 17px; }
   .helpcard { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 14px 16px; margin-bottom: 20px; font-size: 13.5px; color: var(--dim); line-height: 1.55; }
   .helpcard b { color: var(--text); } .helpcard ul { margin: 8px 0 0; padding-left: 18px; } .helpcard li { margin-bottom: 3px; }

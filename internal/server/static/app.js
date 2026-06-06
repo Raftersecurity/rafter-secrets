@@ -848,9 +848,36 @@
   async function markRotated(id) { try { await api(`/api/secrets/${encodeURIComponent(id)}/rotated`, { method: "POST" }); setToast("Noted — you replaced it."); await loadSecrets(); renderDrawer(); } catch (e) { setToast("Couldn't update: " + e.message, true); } }
 
   // ---- add a secret ----------------------------------------------------
-  function openAddSecret() {
+  // knownFolders gathers the folders the user actually keeps secrets in — the
+  // dirs of every scanned secret, plus the scan roots and detected workspace
+  // dirs — so "which folder?" is a pick, not a typed path.
+  function knownFolders(sc) {
+    const seen = new Set(), out = [];
+    const add = (p) => { if (!p) return; const pretty = prettyPath(p); if (!seen.has(pretty)) { seen.add(pretty); out.push(pretty); } };
+    for (const s of state.secrets) for (const fl of fileLocations(s)) add(dirOf(fl.path));
+    if (sc) { (sc.roots || []).forEach(add); (sc.suggested || []).forEach(add); }
+    out.sort();
+    return out;
+  }
+  async function openAddSecret() {
     const f = {};
     const field = (label, key, ph, help, ta) => { const input = ta ? el("textarea", { placeholder: ph }) : el("input", { type: "text", placeholder: ph }); f[key] = input; return el("label", {}, [ el("div", { class: "lbl" }, [ document.createTextNode(label), help ? el("span", { class: "help", title: help, text: "?" }) : null ]), input ]); };
+
+    // Folder picker for "where does it live?" — a dropdown of your folders +
+    // "Other folder…" for a custom path, instead of free-typing.
+    let sc = null;
+    try { sc = await api("/api/scan-config"); } catch (_) {}
+    const folders = knownFolders(sc);
+    const sel = el("select");
+    sel.appendChild(el("option", { value: "", text: "— choose a folder (optional) —" }));
+    for (const fol of folders) sel.appendChild(el("option", { value: fol, text: fol }));
+    sel.appendChild(el("option", { value: "__other__", text: "Other folder…" }));
+    const other = el("input", { class: "pathother", type: "text", placeholder: "type a folder path, e.g. ~/code/app" });
+    other.style.display = "none";
+    sel.addEventListener("change", () => { const isOther = sel.value === "__other__"; other.style.display = isOther ? "block" : "none"; if (isOther) other.focus(); });
+    f.path = { get value() { return sel.value === "__other__" ? (other.value || "") : sel.value; } };
+    const folderField = el("label", {}, [ el("div", { class: "lbl" }, [ document.createTextNode("Which folder is it in?"), el("span", { class: "help", title: "Just a note — nothing is opened. Pick a folder you already use, or choose “Other folder”.", text: "?" }) ]), sel, other ]);
+
     const modal = el("div", { class: "modal" }, [
       el("div", { class: "mhead" }, [ el("h2", { text: "Add a secret to track" }), el("button", { class: "btn ghost sm mclose", onclick: closeModal, text: "✕" }) ]),
       el("p", { class: "msub", text: "For a key you keep elsewhere — a password manager, a vendor dashboard — or want to track before it's scanned." }),
@@ -858,7 +885,7 @@
       el("div", { class: "form" }, [
         field("Name", "key_name", "e.g. STRIPE_LIVE_KEY", "What you'll recognise it by."),
         field("Project", "project", "start typing — your repos are suggested  (optional)", "Group it with related secrets. Names from your repos and existing projects autocomplete."),
-        field("Where does it live?", "path", "e.g. ~/code/app/.env  (optional)", "Just a note — nothing is opened."),
+        folderField,
         field("Where do you replace it?", "rotate_url", "https://…  (optional)", null),
         field("Notes", "notes", "optional", null, true),
       ]),
