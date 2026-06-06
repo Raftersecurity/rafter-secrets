@@ -13,6 +13,7 @@
   const content = document.getElementById("content");
   const drawerRoot = document.getElementById("drawer-root");
   const modalRoot = document.getElementById("modal-root");
+  const walkthroughRoot = document.getElementById("walkthrough-root");
   const toastWrap = document.getElementById("toast-wrap");
   const scanStatus = document.getElementById("scan-status");
   const scanStatusText = document.getElementById("scan-status-text");
@@ -20,6 +21,7 @@
   let state = { secrets: [], scan_home: null };
   let selectedId = null;
   let view = localStorage.getItem("rafter.view") || "secret";
+  let tourChecked = false;
   const revealed = new Map();
   let saveTimer = null, saveState = "idle";
 
@@ -187,6 +189,7 @@
       const roots = (body.scan_config && body.scan_config.roots) || [];
       state.scan_home = roots.slice().sort((a, b) => a.length - b.length)[0] || null;
       render();
+      if (!tourChecked) { tourChecked = true; if (state.secrets.length && localStorage.getItem("rafter.tour") !== "done") startWalkthrough(); }
     } catch (e) {
       clear(content);
       content.appendChild(el("div", { class: "empty" }, [ el("div", { class: "ec", html: ICON.warn }), el("h3", { text: "Couldn't reach Rafter Secrets" }), el("p", { text: e.message + ". Try reloading." }) ]));
@@ -538,6 +541,98 @@
       ]),
       el("button", { class: "btn primary", onclick: secureAllFix, text: "Lock them all down" }),
     ]);
+  }
+
+  // ---- first-run walkthrough -------------------------------------------
+  // The comprehension layer: three must-see screens (what's here · what's a
+  // secret · make them private — which actually fixes something) then optional
+  // learn-more. Auto-runs on first launch, re-launchable from the "?" button.
+  function startWalkthrough() {
+    let i = 0;
+    const lock = { checked: false, files: 0, done: false, n: 0 };
+    const screens = [welcome, whatIs, makePrivate, allSet];
+    function close(done) { if (done) { try { localStorage.setItem("rafter.tour", "done"); } catch (_) {} } clear(walkthroughRoot); }
+    function go(n) { i = n; draw(); }
+    function next() { i < screens.length - 1 ? go(i + 1) : close(true); }
+    function draw() { screens[i](); }
+    function frame(kids, buttons) {
+      const dots = el("div", { class: "wt-dots" });
+      for (let k = 0; k < screens.length; k++) dots.appendChild(el("div", { class: "wt-dot" + (k === i ? " on" : "") }));
+      const actions = el("div", { class: "wt-actions" }, [dots].concat(buttons || [el("button", { class: "btn primary", onclick: next, text: "Next →" })]));
+      clear(walkthroughRoot);
+      walkthroughRoot.appendChild(el("div", { class: "wt-scrim" }, [
+        el("button", { class: "wt-skip", onclick: () => close(true), text: "Skip tour" }),
+        el("div", { class: "wt" }, kids.concat([actions])),
+      ]));
+    }
+    function welcome() {
+      frame([
+        el("div", { class: "wt-eyebrow", text: "Welcome" }),
+        el("h1", { text: "Rafter Secrets helps you manage the secrets on your device." }),
+        el("p", { text: "We scan your computer for anything that looks like a secret, so you can see what’s there and tidy up what’s risky." }),
+        el("p", { html: "<b>Your secrets never leave this device.</b> Nothing is uploaded — ever." }),
+        el("p", { text: "We’ll look through your home folder — you can change which folders anytime from the gear menu." }),
+      ], [el("button", { class: "btn primary", onclick: next, text: "Looks good →" })]);
+    }
+    function whatIs() {
+      frame([
+        el("div", { class: "wt-eyebrow", text: "1 · The basics" }),
+        el("h1", { text: "What’s a secret?" }),
+        el("p", { text: "A secret is a key or password that proves who you are to a computer system." }),
+        el("ul", {}, [
+          el("li", { html: "<span>🔑</span><span>A <b>password</b> lets a person log into an account.</span>" }),
+          el("li", { html: "<span>🤖</span><span>An <b>API key</b> lets one app talk to another — no human involved.</span>" }),
+          el("li", { html: "<span>🗄️</span><span>Other keys — like a <b>database password</b> — can be used by people or machines.</span>" }),
+        ]),
+        el("p", { text: "They look like this:" }),
+        el("div", { class: "demos" }, [el("span", { class: "demo", text: "sk_live_••••••••" }), el("span", { class: "demo", text: "AKIA••••••••" }), el("span", { class: "demo", text: "postgres://••••" })]),
+      ]);
+    }
+    function makePrivate() {
+      const box = lock.done
+        ? el("div", { class: "wt-lockbox" }, [el("span", { class: "wt-done" }, [el("span", { class: "ci", html: ICON.check }), document.createTextNode(" " + lock.n + (lock.n === 1 ? " file is" : " files are") + " now private to you.")])])
+        : el("div", { class: "wt-lockbox" }, [el("span", { html: lock.checked ? (lock.files ? "<b>" + lock.files + "</b> of your secret files can be read by other apps right now." : "Good news — your secret files are already private to you.") : "Checking your files…" })]);
+      let buttons;
+      if (lock.done || (lock.checked && lock.files === 0)) buttons = [el("button", { class: "btn primary", onclick: next, text: "Next →" })];
+      else { const lb = el("button", { class: "btn primary", onclick: doLock, text: "Lock them down" }); if (!lock.checked) lb.disabled = true; buttons = [lb, el("button", { class: "btn", onclick: next, text: "Skip for now" })]; }
+      frame([
+        el("div", { class: "wt-eyebrow", text: "2 · Make them private" }),
+        el("h1", { text: "Make sure only you can open them." }),
+        el("p", { html: "Some of your secret files can be read by <b>any app on this computer</b> — including AI coding agents. We can tighten them so only you can open them. This changes who can open the file, never the secret itself — and you can undo it." }),
+        box,
+      ], buttons);
+      if (!lock.checked && !lock.done) {
+        api("/api/secure-all", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apply: false }) })
+          .then((prev) => { lock.checked = true; lock.files = (prev && prev.files || []).length; draw(); })
+          .catch(() => { lock.checked = true; lock.files = 0; draw(); });
+      }
+    }
+    function doLock() {
+      api("/api/secure-all", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apply: true }) })
+        .then(async (r) => { lock.done = true; lock.n = (r && r.files || []).length; await loadSecrets(); draw(); })
+        .catch((e) => setToast("Couldn't lock them down: " + e.message, true));
+    }
+    function allSet() {
+      frame([
+        el("div", { class: "wt-eyebrow", text: "You’re all set" }),
+        el("h1", { text: "That’s the gist." }),
+        el("p", { text: "Here’s everything we found on your device — grouped, searchable, and calm. Open any secret to tag it, note where it came from, or replace it." }),
+      ], [el("button", { class: "btn primary", onclick: () => close(true), text: "Go to my dashboard" }), el("button", { class: "btn", onclick: learnMore, text: "Learn a bit more" })]);
+    }
+    function learnMore() {
+      clear(walkthroughRoot);
+      walkthroughRoot.appendChild(el("div", { class: "wt-scrim" }, [
+        el("button", { class: "wt-skip", onclick: () => close(true), text: "Done" }),
+        el("div", { class: "wt" }, [
+          el("div", { class: "wt-eyebrow", text: "Good to know" }),
+          el("h1", { text: "Two things worth understanding." }),
+          el("div", { class: "wt-card" }, [el("h3", { text: "Revoke vs. delete" }), el("p", { html: "When you’re done with a key, <b>revoke</b> it at the site you got it from (Stripe, AWS, …). Deleting your copy isn’t enough — if someone else already grabbed it, they can still use it until you revoke. Rafter shows you the key and links you there; you do the revoking on their site." })]),
+          el("div", { class: "wt-card" }, [el("h3", { text: "Rotating a key" }), el("p", { text: "Rotating just means turning off the old key and switching to a new one. If you ever think your device was compromised, rotate — it’s the safe reset." })]),
+          el("div", { class: "wt-actions" }, [el("div", { class: "wt-dots" }), el("button", { class: "btn primary", onclick: () => close(true), text: "Go to my dashboard" })]),
+        ]),
+      ]));
+    }
+    draw();
   }
 
   // ---- drawer ----------------------------------------------------------
@@ -902,6 +997,7 @@
   // ---- boot ------------------------------------------------------------
   document.getElementById("add-secret-btn").addEventListener("click", openAddSecret);
   document.getElementById("scope-btn").addEventListener("click", openScopePanel);
+  document.getElementById("tour-btn").addEventListener("click", startWalkthrough);
   document.addEventListener("keydown", (e) => { if (e.key !== "Escape") return; if (modalRoot.firstChild) closeModal(); else if (selectedId) closeDrawer(); });
   wireTheme(); wireViewToggle(); loadSecrets(); startEvents(); startHeartbeat();
 })();
