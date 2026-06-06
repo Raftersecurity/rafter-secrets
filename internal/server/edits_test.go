@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Raftersecurity/rafter-secrets/internal/edit"
@@ -119,6 +120,59 @@ func TestSecureAllEndpoint_OnlySecretsAndUndo(t *testing.T) {
 	doJSON(t, authedReq(t, "POST", ts.URL+"/api/undo", s.token, []byte(`{"op_id":"`+resp.OpID+`"}`)), 200)
 	if modeOf(secPath) != 0o644 {
 		t.Fatalf("undo failed: %04o", modeOf(secPath))
+	}
+}
+
+func TestRotateEndpoint_PreviewApplyUndo(t *testing.T) {
+	s, ts, store, storePath := newTestServerWithStore(t)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	envPath := filepath.Join(root, ".env")
+	if err := os.WriteFile(envPath, []byte("API_KEY=old-value-123\nKEEP=me\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Update(func(g *storage.Global) bool {
+		g.Secrets = append(g.Secrets, storage.Secret{ID: "sid", KeyName: "API_KEY", FoundIn: []storage.FoundIn{{SourceType: storage.SourceEnvFile, Path: envPath, Line: 1}}})
+		return true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.editEngine = func() *edit.Engine { return edit.New(filepath.Dir(storePath), []string{root}) }
+	s.SetRescan(func() {})
+	read := func() string { b, _ := os.ReadFile(envPath); return string(b) }
+	orig := read()
+
+	var resp struct {
+		Applied bool     `json:"applied"`
+		Files   []string `json:"files"`
+		OpID    string   `json:"op_id"`
+	}
+	// Preview lists the file, writes nothing.
+	body := doJSON(t, authedReq(t, "POST", ts.URL+"/api/secrets/sid/rotate", s.token, []byte(`{"value":"new-value-xyz","apply":false}`)), 200)
+	json.Unmarshal(body, &resp)
+	if resp.Applied || len(resp.Files) != 1 {
+		t.Fatalf("preview = %+v", resp)
+	}
+	if read() != orig {
+		t.Fatal("preview wrote the file")
+	}
+	// Empty value is rejected.
+	doJSON(t, authedReq(t, "POST", ts.URL+"/api/secrets/sid/rotate", s.token, []byte(`{"value":"","apply":true}`)), 400)
+	// Apply rewrites only the target key.
+	body = doJSON(t, authedReq(t, "POST", ts.URL+"/api/secrets/sid/rotate", s.token, []byte(`{"value":"new-value-xyz","apply":true}`)), 200)
+	json.Unmarshal(body, &resp)
+	if !resp.Applied || resp.OpID == "" {
+		t.Fatalf("apply = %+v", resp)
+	}
+	if !strings.Contains(read(), "API_KEY=new-value-xyz") || !strings.Contains(read(), "KEEP=me") {
+		t.Fatalf("rotate result wrong: %q", read())
+	}
+	// Undo restores byte-for-byte.
+	doJSON(t, authedReq(t, "POST", ts.URL+"/api/undo", s.token, []byte(`{"op_id":"`+resp.OpID+`"}`)), 200)
+	if read() != orig {
+		t.Fatalf("undo did not restore: %q", read())
 	}
 }
 

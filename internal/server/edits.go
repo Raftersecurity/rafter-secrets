@@ -135,6 +135,81 @@ func (s *Server) handleSecretSecure(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
+type rotateRequest struct {
+	Value string `json:"value"`
+	Apply bool   `json:"apply"`
+}
+
+// handleSecretRotate replaces a secret's value in every file it lives in. The
+// new value arrives in the POST body (localhost-only, same as it's already
+// readable via /reveal) and is piped straight into the edit engine — it is
+// NEVER echoed back. The response returns only which FILES changed, never
+// their contents (that would leak the other secrets in the same file).
+//
+// Honesty: this only rewrites the local file(s). It does NOT revoke or mint a
+// key at the provider — the UI says so and points the user to do that there.
+func (s *Server) handleSecretRotate(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil || s.editEngine == nil {
+		writeJSONErr(w, http.StatusServiceUnavailable, "edits not configured")
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		writeJSONErr(w, http.StatusBadRequest, "missing id")
+		return
+	}
+	var req rotateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+		return
+	}
+	if req.Value == "" {
+		writeJSONErr(w, http.StatusBadRequest, "paste the new value first")
+		return
+	}
+
+	var (
+		key     string
+		targets []edit.Target
+		found   bool
+	)
+	s.store.Read(func(g *storage.Global) {
+		for i := range g.Secrets {
+			if g.Secrets[i].ID == id {
+				key = g.Secrets[i].KeyName
+				targets = editTargetsOf(&g.Secrets[i])
+				found = true
+				return
+			}
+		}
+	})
+	if !found {
+		writeJSONErr(w, http.StatusNotFound, "secret not found")
+		return
+	}
+	if len(targets) == 0 {
+		writeJSONErr(w, http.StatusUnprocessableEntity, "this one has no editable files")
+		return
+	}
+
+	res, err := s.editEngine().Rotate(key, targets, req.Value, "", req.Apply)
+	if err != nil {
+		writeJSONErr(w, http.StatusInternalServerError, "couldn't replace it: "+err.Error())
+		return
+	}
+	if req.Apply && res.Applied && s.rescan != nil {
+		s.rescan()
+	}
+	// Files only — never the new value or the file contents.
+	files := make([]string, 0, len(res.Changes))
+	for _, c := range res.Changes {
+		files = append(files, c.Path)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "op": res.Op, "op_id": res.OpID, "applied": res.Applied, "files": files})
+}
+
 type undoRequest struct {
 	OpID string `json:"op_id"`
 }

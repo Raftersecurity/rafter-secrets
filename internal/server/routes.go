@@ -33,6 +33,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	// In-app fixes — the only endpoints that write user files (previewed,
 	// undoable; see docs/design/in-app-edits.md).
 	mux.HandleFunc("POST /api/secrets/{id}/secure", s.handleSecretSecure)
+	mux.HandleFunc("POST /api/secrets/{id}/rotate", s.handleSecretRotate)
 	mux.HandleFunc("POST /api/secure-all", s.handleSecureAll)
 	mux.HandleFunc("POST /api/undo", s.handleUndo)
 }

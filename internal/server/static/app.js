@@ -480,6 +480,43 @@
       },
     });
   }
+  function rotateFix(s) {
+    const input = el("input", { class: "scope-input", type: "text", autocomplete: "off", spellcheck: "false", placeholder: "paste the new value from the provider" });
+    const modal = el("div", { class: "modal confirm" }, [
+      el("div", { class: "mhead" }, [ el("h2", { text: "Replace " + s.key_name }), el("button", { class: "btn ghost sm mclose", onclick: closeModal, text: "✕" }) ]),
+      el("p", { class: "msub", html: "Make a new value at the provider, then paste it here — Rafter swaps it into your file" + (fileLocations(s).length > 1 ? "s" : "") + ". It <b>doesn’t</b> turn off the old one at the provider; do that on their site once this works." }),
+      el("div", { class: "scope-add" }, [ input ]),
+      el("div", { class: "mactions" }, [ el("button", { class: "btn sm", onclick: closeModal, text: "Cancel" }), el("button", { class: "btn primary sm", text: "Replace it", onclick: () => doRotate(s, input.value) }) ]),
+    ]);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doRotate(s, input.value); } });
+    clear(modalRoot);
+    modalRoot.appendChild(el("div", { class: "modal-wrap", onclick: (e) => { if (e.target.classList.contains("modal-wrap")) closeModal(); } }, [ modal ]));
+    input.focus();
+  }
+  async function doRotate(s, value) {
+    value = (value || "").trim();
+    if (!value) { setToast("Paste the new value first.", true); return; }
+    let prev;
+    try { prev = await api(`/api/secrets/${encodeURIComponent(s.id)}/rotate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value, apply: false }) }); }
+    catch (e) { setToast("Couldn't prepare that: " + e.message, true); return; }
+    const files = (prev && prev.files) || [];
+    if (!files.length) { setToast("Nothing to update for this one.", true); return; }
+    confirmFix({
+      title: "Replace " + s.key_name + " in " + files.length + " file" + (files.length > 1 ? "s" : "") + "?",
+      lead: "Your file" + (files.length > 1 ? "s get" : " gets") + " the new value (the old one is backed up — you can undo). This does not revoke the old key at the provider.",
+      detail: files.map((p) => splitPath(p).base),
+      confirmText: "Replace it",
+      onConfirm: async () => {
+        try {
+          const r = await api(`/api/secrets/${encodeURIComponent(s.id)}/rotate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value, apply: true }) });
+          closeModal();
+          const n = (r.files || []).length;
+          toastWithUndo("Replaced in " + n + " file" + (n === 1 ? "" : "s") + ". Now turn off the old key at the provider.", r.op_id);
+          await loadSecrets(); renderDrawer();
+        } catch (e) { setToast("Couldn't replace it: " + e.message, true); }
+      },
+    });
+  }
   function renderLockAllBanner(n) {
     return el("div", { class: "lockall" }, [
       el("span", { class: "ci", html: ICON.shield }),
@@ -552,6 +589,10 @@
 
     if (!isManual(s) && fileLocations(s).length) {
       body.appendChild(el("div", { class: "blk-h", text: "Replacing this key" }));
+      body.appendChild(el("div", { class: "fact" }, [
+        el("button", { class: "btn primary sm", onclick: () => rotateFix(s), text: "Replace the value" }),
+        el("span", { class: "hint", text: "updates your file(s) · previewed · undoable" }),
+      ]));
       body.appendChild(rotateGuide(s));
     }
 
