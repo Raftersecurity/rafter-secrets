@@ -180,7 +180,14 @@
   @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
   /* in-app fix confirmation */
   .modal.confirm { width: 460px; }
-  .confirm-detail { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 4px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 12.5px; color: var(--dim); }
+  .confirm-detail { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 4px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 12.5px; color: var(--dim); max-height: 260px; overflow-y: auto; }
+  /* batched lock-down banner */
+  .lockall { display: flex; align-items: center; gap: 14px; margin: 22px 0 4px; padding: 15px 18px; border: 1px solid var(--amber-line); background: var(--amber-bg); border-radius: 15px; }
+  .lockall > .ci { display: inline-flex; color: var(--amber); flex-shrink: 0; }
+  .lockall-txt { flex: 1; min-width: 0; }
+  .lockall-h { font-size: 14.5px; font-weight: 600; color: var(--text); }
+  .lockall-s { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .lockall .btn { flex-shrink: 0; }
 
   /* drawer + modal */
   .scrim { position: fixed; inset: 0; background: var(--scrim); backdrop-filter: blur(3px); z-index: 50; animation: scrim-in .2s ease; }

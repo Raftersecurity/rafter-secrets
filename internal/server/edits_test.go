@@ -71,6 +71,57 @@ func TestSecureEndpoint_PreviewApplyUndo(t *testing.T) {
 	}
 }
 
+func TestSecureAllEndpoint_OnlySecretsAndUndo(t *testing.T) {
+	s, ts, store, storePath := newTestServerWithStore(t)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := func(name string) string {
+		p := filepath.Join(root, name)
+		if err := os.WriteFile(p, []byte("K=v\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(p, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	secPath := mk("secret.env")
+	envPath := mk("config.env")
+	if err := store.Update(func(g *storage.Global) bool {
+		g.Secrets = append(g.Secrets,
+			storage.Secret{ID: "s1", KeyName: "API_KEY", Kind: "secret", FoundIn: []storage.FoundIn{{SourceType: storage.SourceEnvFile, Path: secPath, Permissions: "0644"}}},
+			storage.Secret{ID: "s2", KeyName: "PORT", Kind: "env", FoundIn: []storage.FoundIn{{SourceType: storage.SourceEnvFile, Path: envPath, Permissions: "0644"}}},
+		)
+		return true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.editEngine = func() *edit.Engine { return edit.New(filepath.Dir(storePath), []string{root}) }
+	s.SetRescan(func() {})
+	modeOf := func(p string) os.FileMode { fi, _ := os.Stat(p); return fi.Mode().Perm() }
+
+	body := doJSON(t, authedReq(t, "POST", ts.URL+"/api/secure-all", s.token, []byte(`{"apply":true}`)), 200)
+	var resp secureAllResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Applied || len(resp.Files) != 1 {
+		t.Fatalf("secure-all = %+v, want 1 file applied", resp)
+	}
+	if modeOf(secPath) != 0o600 {
+		t.Fatalf("secret file not tightened: %04o", modeOf(secPath))
+	}
+	if modeOf(envPath) != 0o644 {
+		t.Fatalf("env file should be untouched, got %04o", modeOf(envPath))
+	}
+	doJSON(t, authedReq(t, "POST", ts.URL+"/api/undo", s.token, []byte(`{"op_id":"`+resp.OpID+`"}`)), 200)
+	if modeOf(secPath) != 0o644 {
+		t.Fatalf("undo failed: %04o", modeOf(secPath))
+	}
+}
+
 func TestSecureEndpoint_Disabled503(t *testing.T) {
 	s, ts, _, _ := newTestServerWithStore(t)
 	// editEngine left nil → edits unavailable.

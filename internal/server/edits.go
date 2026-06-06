@@ -13,10 +13,33 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 
 	"github.com/Raftersecurity/rafter-secrets/internal/edit"
 	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
+
+// effectiveKind is the classifier's verdict unless the user pinned it.
+func effectiveKind(s *storage.Secret) string {
+	if s.Annotation.OverrideKind == "secret" || s.Annotation.OverrideKind == "env" {
+		return s.Annotation.OverrideKind
+	}
+	if s.Kind == "env" {
+		return "env"
+	}
+	return "secret"
+}
+
+// exposedMode reports whether path is group- or other-readable (the "any app
+// can read it" condition), used only to decide whether a NOT-owned file is
+// worth flagging as skipped.
+func exposedMode(path string) bool {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return fi.Mode().Perm()&0o044 != 0
+}
 
 // editTargetsOf returns the editable file locations of a secret — file sources
 // only, never manual/keystore entries. Mirrors the CLI's editTargets.
@@ -139,4 +162,80 @@ func (s *Server) handleUndo(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "undone": req.OpID})
+}
+
+type secureAllResponse struct {
+	OK              bool         `json:"ok"`
+	OpID            string       `json:"op_id"`
+	Applied         bool         `json:"applied"`
+	Files           []secureFile `json:"files"`
+	SkippedNotOwned []string     `json:"skipped_not_owned"`
+}
+
+// handleSecureAll tightens every eligible exposed SECRET file in one undoable
+// operation: owned-by-this-user, real-secret (kind=secret), file sources only.
+// Files we can't chmod (owned by another user) are skipped and reported, never
+// failed. Already-private files are skipped by the engine. apply:false previews.
+func (s *Server) handleSecureAll(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil || s.editEngine == nil {
+		writeJSONErr(w, http.StatusServiceUnavailable, "edits not configured")
+		return
+	}
+	var req secureRequest
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+			return
+		}
+	}
+
+	var (
+		targets []edit.Target
+		skipped []string
+		seen    = map[string]bool{}
+	)
+	s.store.Read(func(g *storage.Global) {
+		for i := range g.Secrets {
+			sec := &g.Secrets[i]
+			if effectiveKind(sec) != "secret" {
+				continue
+			}
+			for _, t := range editTargetsOf(sec) {
+				if seen[t.Path] {
+					continue
+				}
+				seen[t.Path] = true
+				if !ownedByUs(t.Path) {
+					if exposedMode(t.Path) {
+						skipped = append(skipped, t.Path)
+					}
+					continue
+				}
+				targets = append(targets, t)
+			}
+		}
+	})
+
+	out := secureAllResponse{OK: true, SkippedNotOwned: skipped}
+	if len(targets) > 0 {
+		// One operation over every file → one op_id → one Undo-all. The engine
+		// skips files that are already owner-only, so preview lists only the
+		// files that would actually change.
+		res, err := s.editEngine().Secure("all exposed secrets", targets, req.Apply)
+		if err != nil {
+			writeJSONErr(w, http.StatusInternalServerError, "couldn't lock them down: "+err.Error())
+			return
+		}
+		out.OpID = res.OpID
+		out.Applied = res.Applied
+		for _, c := range res.Changes {
+			out.Files = append(out.Files, secureFile{Path: c.Path, OldMode: c.Old, NewMode: c.New})
+		}
+		if req.Apply && res.Applied && s.rescan != nil {
+			s.rescan()
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(out)
 }

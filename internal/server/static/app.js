@@ -202,6 +202,9 @@
     content.appendChild(renderHero(pool));
     content.appendChild(renderFigures(pool));
 
+    const exposedN = pool.filter((s) => !isStale(s) && exposure(s)).length;
+    if (exposedN > 0) content.appendChild(renderLockAllBanner(exposedN));
+
     const attn = pool.filter(needsAttention);
     if (view === "folder") {
       content.appendChild(section("Where your secrets live", null, null));
@@ -450,6 +453,42 @@
     } }));
     toastWrap.appendChild(t);
     setTimeout(() => { t.style.transition = "opacity .3s"; t.style.opacity = "0"; setTimeout(() => t.remove(), 300); }, 9000);
+  }
+
+  async function secureAllFix() {
+    let prev;
+    try { prev = await api("/api/secure-all", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apply: false }) }); }
+    catch (e) { setToast("Couldn't check that fix: " + e.message, true); return; }
+    const files = (prev && prev.files) || [];
+    const skipped = (prev && prev.skipped_not_owned) || [];
+    if (!files.length) { setToast(skipped.length ? "Nothing here can be locked down automatically." : "Everything's already private to you."); return; }
+    let lead = "Only you will be able to read " + (files.length > 1 ? "these files" : "this file") + ". The secrets themselves don’t change, and you can undo it.";
+    if (skipped.length) lead += " (" + skipped.length + " owned by another user can’t be changed here.)";
+    confirmFix({
+      title: "Lock down " + files.length + " file" + (files.length > 1 ? "s" : "") + "?",
+      lead,
+      detail: files.map((f) => splitPath(f.path).base + "   " + f.old_mode + " → " + f.new_mode),
+      confirmText: "Lock them down",
+      onConfirm: async () => {
+        try {
+          const r = await api("/api/secure-all", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apply: true }) });
+          closeModal();
+          const n = (r.files || []).length;
+          toastWithUndo(n + " file" + (n === 1 ? "" : "s") + " locked down — only you can read " + (n === 1 ? "it" : "them") + " now.", r.op_id);
+          await loadSecrets(); renderDrawer();
+        } catch (e) { setToast("Couldn't apply that: " + e.message, true); }
+      },
+    });
+  }
+  function renderLockAllBanner(n) {
+    return el("div", { class: "lockall" }, [
+      el("span", { class: "ci", html: ICON.shield }),
+      el("div", { class: "lockall-txt" }, [
+        el("div", { class: "lockall-h", text: n + " secret file" + (n > 1 ? "s are" : " is") + " readable by other apps" }),
+        el("div", { class: "lockall-s", text: "Make them private to you — previewed first, and undoable." }),
+      ]),
+      el("button", { class: "btn primary", onclick: secureAllFix, text: "Lock them all down" }),
+    ]);
   }
 
   // ---- drawer ----------------------------------------------------------
