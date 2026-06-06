@@ -197,6 +197,7 @@
     try {
       const body = await api("/api/secrets");
       state.secrets = body.secrets || [];
+      state.revealDisabled = !!body.reveal_disabled;
       const roots = (body.scan_config && body.scan_config.roots) || [];
       state.scan_home = roots.slice().sort((a, b) => a.length - b.length)[0] || null;
       render();
@@ -690,6 +691,10 @@
 
     const isRev = revealed.has(s.id);
     if (isManual(s)) body.appendChild(el("div", { class: "valuebox" }, [ el("span", { class: "v hidden", text: "added by you — no file value" }) ]));
+    else if (state.revealDisabled) body.appendChild(el("div", { class: "valuebox" }, [
+      el("span", { class: "v hidden", text: "••••••••••••" }),
+      el("span", { class: "hint", text: "showing values is turned off (--no-reveal)" }),
+    ]));
     else body.appendChild(el("div", { class: "valuebox" }, [
       el("span", { class: "v " + (isRev ? "revealed" : "hidden"), text: isRev ? revealed.get(s.id) : "••••••••••••" }),
       isRev ? el("button", { class: "btn sm", onclick: () => copy(revealed.get(s.id), "Copied"), text: "Copy" }) : null,

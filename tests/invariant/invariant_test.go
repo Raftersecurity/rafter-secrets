@@ -24,6 +24,7 @@ import (
 	"io/fs"
 	mathrand "math/rand"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -133,7 +134,7 @@ func (m manifest) diff(other manifest) []string {
 type trove struct {
 	t        *testing.T
 	baseURL  string
-	token    string
+	client   *http.Client // carries the session cookie from the launch exchange
 	storeDir string
 	store    *docstore.Store
 	rescan   *rescanpkg.Rescanner
@@ -221,13 +222,16 @@ func startTrove(t *testing.T, fixtureRoot string) *trove {
 	if err != nil {
 		t.Fatalf("parse url: %v", err)
 	}
-	tok := parsed.Query().Get("token")
 	base := fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar: %v", err)
+	}
 
 	tr := &trove{
 		t:        t,
 		baseURL:  base,
-		token:    tok,
+		client:   &http.Client{Jar: jar},
 		storeDir: storeDir,
 		store:    store,
 		rescan:   rs,
@@ -256,12 +260,10 @@ func (tr *trove) waitReady(t *testing.T) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		req, err := http.NewRequest("GET", tr.baseURL+"/api/status", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		req.Header.Set("X-Rafter-Secrets-Token", tr.token)
-		resp, err := http.DefaultClient.Do(req)
+		// GET the launch URL: its single-use token is exchanged for the session
+		// cookie (stored in the jar) and we follow the redirect to a 200. This
+		// authenticates the client AND confirms the server is serving.
+		resp, err := tr.client.Get(tr.srv.URL())
 		if err == nil {
 			_ = resp.Body.Close()
 			if resp.StatusCode == 200 {
@@ -275,8 +277,9 @@ func (tr *trove) waitReady(t *testing.T) {
 	}
 }
 
-// do makes an authenticated request and returns (status, body). Any
-// transport error fails the test — body parsing is the caller's job.
+// do makes an authenticated request and returns (status, body). Auth rides the
+// session cookie in the client's jar; writes carry a same-origin Origin for the
+// fail-closed guard. Any transport error fails the test.
 func (tr *trove) do(method, path string, body []byte) (int, []byte) {
 	tr.t.Helper()
 	var r io.Reader
@@ -287,11 +290,13 @@ func (tr *trove) do(method, path string, body []byte) (int, []byte) {
 	if err != nil {
 		tr.t.Fatal(err)
 	}
-	req.Header.Set("X-Rafter-Secrets-Token", tr.token)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := http.DefaultClient.Do(req)
+	if method != http.MethodGet && method != http.MethodHead {
+		req.Header.Set("Origin", tr.baseURL)
+	}
+	resp, err := tr.client.Do(req)
 	if err != nil {
 		tr.t.Fatalf("%s %s: %v", method, path, err)
 	}

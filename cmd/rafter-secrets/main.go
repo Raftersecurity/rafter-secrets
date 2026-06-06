@@ -26,6 +26,23 @@ import (
 
 const defaultIdleTimeout = 30 * time.Minute
 
+// isTTY reports whether f is an interactive terminal (vs a redirected file).
+func isTTY(f *os.File) bool {
+	fi, err := f.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+// writeLaunchURL drops the launch URL (with its single-use token) into an
+// owner-only file beside the store, so a headless launch can retrieve it
+// without the token landing in a redirected log. Returns the path written.
+func writeLaunchURL(storePath, url string) string {
+	p := filepath.Join(filepath.Dir(storePath), ".launch-url")
+	if err := os.WriteFile(p, []byte(url+"\n"), 0o600); err != nil {
+		return "(could not write launch link: " + err.Error() + ")"
+	}
+	return p
+}
+
 func main() {
 	// CLI subcommands run and exit before the UI-launch path. A bare
 	// invocation (or UI flags like --no-open) falls through to runUI.
@@ -41,6 +58,7 @@ func main() {
 
 	var (
 		noOpen      = flag.Bool("no-open", false, "do not auto-open browser")
+		noReveal    = flag.Bool("no-reveal", false, "disable revealing secret values (UI + API) — for screen-shares / shared machines")
 		idleTimeout = flag.Duration("idle-timeout", defaultIdleTimeout, "exit after this long with no client heartbeat")
 		rescan      = flag.Bool("rescan", false, "run a filesystem scan and exit (no UI)")
 	)
@@ -101,9 +119,10 @@ func main() {
 
 	bus := eventbus.New()
 	srv, err := server.New(server.Config{
-		IdleTimeout: *idleTimeout,
-		Bus:         bus,
-		Store:       store,
+		IdleTimeout:    *idleTimeout,
+		RevealDisabled: *noReveal,
+		Bus:            bus,
+		Store:          store,
 		// In-app fixes go through the same edit engine the CLI uses, bound to
 		// the CURRENT scan roots (scope can change at runtime via the UI).
 		EditEngine: func() *edit.Engine {
@@ -117,7 +136,18 @@ func main() {
 	}
 
 	url := srv.URL()
-	fmt.Fprintf(os.Stderr, "rafter-secrets: serving on %s\n", url)
+	// The launch URL carries the single-use token. On a real terminal, printing
+	// it is fine (your own scrollback). When stderr is redirected (a log file,
+	// journal), don't persist the token there — write it to an owner-only file
+	// instead and print only the loopback address.
+	if isTTY(os.Stderr) {
+		fmt.Fprintf(os.Stderr, "rafter-secrets: serving on %s\n", url)
+	} else {
+		p := writeLaunchURL(storePath, url)
+		fmt.Fprintf(os.Stderr, "rafter-secrets: serving on 127.0.0.1 (launch link written to %s)\n", p)
+		// Don't leave the launch link (and its spent token) on disk after exit.
+		defer func() { _ = os.Remove(p) }()
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

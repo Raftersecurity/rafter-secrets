@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/Raftersecurity/rafter-secrets/internal/docstore"
@@ -34,6 +35,11 @@ type Config struct {
 	// scan roots (scope can change at runtime, so it's a factory). The in-app
 	// fix endpoints (secure/undo) use it; nil makes them return 503.
 	EditEngine func() *edit.Engine
+
+	// RevealDisabled turns off the /reveal endpoint (403) and hides "Show
+	// value" in the UI — the --no-reveal mode. Shrinks the blast radius of a
+	// session compromise for screen-shares / agent / shared-box sessions.
+	RevealDisabled bool
 }
 
 // SetRescan installs the callback the scan-config endpoint fires after the
@@ -42,15 +48,22 @@ type Config struct {
 func (s *Server) SetRescan(fn func()) { s.rescan = fn }
 
 type Server struct {
-	httpSrv    *http.Server
-	listener   net.Listener
-	token      string
-	url        string
-	life       *lifecycle
-	bus        *eventbus.Bus
-	store      *docstore.Store
-	rescan     func()
-	editEngine func() *edit.Engine
+	httpSrv  *http.Server
+	listener net.Listener
+	// launchToken authorizes exactly ONE cookie exchange (it travels in the
+	// launch URL → browser argv → ps, so it must be single-use). token is the
+	// long-lived session credential the cookie/header carry; it never appears
+	// in a URL.
+	launchToken    string
+	launchUsed     atomic.Bool
+	token          string
+	url            string
+	life           *lifecycle
+	bus            *eventbus.Bus
+	store          *docstore.Store
+	rescan         func()
+	editEngine     func() *edit.Engine
+	revealDisabled bool
 }
 
 // New binds to a random port on 127.0.0.1 and prepares (but does not start)
@@ -61,22 +74,29 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("bind localhost: %w", err)
 	}
 
-	tok, err := randomToken(32)
+	launch, err := randomToken(32)
 	if err != nil {
 		_ = ln.Close()
-		return nil, fmt.Errorf("session token: %w", err)
+		return nil, fmt.Errorf("launch token: %w", err)
+	}
+	session, err := randomToken(32)
+	if err != nil {
+		_ = ln.Close()
+		return nil, fmt.Errorf("session secret: %w", err)
 	}
 
 	s := &Server{
-		listener:   ln,
-		token:      tok,
-		life:       newLifecycle(cfg.IdleTimeout),
-		bus:        cfg.Bus,
-		store:      cfg.Store,
-		editEngine: cfg.EditEngine,
+		listener:       ln,
+		launchToken:    launch,
+		token:          session,
+		life:           newLifecycle(cfg.IdleTimeout),
+		bus:            cfg.Bus,
+		store:          cfg.Store,
+		editEngine:     cfg.EditEngine,
+		revealDisabled: cfg.RevealDisabled,
 	}
 	addr := ln.Addr().(*net.TCPAddr)
-	s.url = fmt.Sprintf("http://127.0.0.1:%d/?token=%s", addr.Port, tok)
+	s.url = fmt.Sprintf("http://127.0.0.1:%d/?token=%s", addr.Port, launch)
 
 	mux := http.NewServeMux()
 	s.routes(mux)

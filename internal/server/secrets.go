@@ -29,9 +29,10 @@ import (
 // callers don't accidentally hold pointers into the live slice; the
 // other fields are read-only summaries.
 type secretsListResponse struct {
-	Secrets      []storage.Secret   `json:"secrets"`
-	ScanConfig   storage.ScanConfig `json:"scan_config"`
-	RevealPolicy string             `json:"reveal_policy"`
+	Secrets        []storage.Secret   `json:"secrets"`
+	ScanConfig     storage.ScanConfig `json:"scan_config"`
+	RevealPolicy   string             `json:"reveal_policy"`
+	RevealDisabled bool               `json:"reveal_disabled"`
 }
 
 func (s *Server) handleSecretsList(w http.ResponseWriter, r *http.Request) {
@@ -46,9 +47,10 @@ func (s *Server) handleSecretsList(w http.ResponseWriter, r *http.Request) {
 	var marshalErr error
 	s.store.Read(func(g *storage.Global) {
 		resp := secretsListResponse{
-			Secrets:      g.Secrets,
-			ScanConfig:   g.ScanConfig,
-			RevealPolicy: g.RevealPolicy,
+			Secrets:        g.Secrets,
+			ScanConfig:     g.ScanConfig,
+			RevealPolicy:   g.RevealPolicy,
+			RevealDisabled: s.revealDisabled,
 		}
 		marshalErr = json.NewEncoder(&buf).Encode(&resp)
 	})
@@ -149,6 +151,10 @@ type revealResponse struct {
 func (s *Server) handleSecretReveal(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		http.Error(w, "store not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if s.revealDisabled {
+		writeJSONErr(w, http.StatusForbidden, "revealing values is turned off (--no-reveal)")
 		return
 	}
 	id := r.PathValue("id")

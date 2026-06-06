@@ -57,7 +57,8 @@ func TestAuth_QueryTokenRedirectsAndSetsCookie(t *testing.T) {
 	client := &http.Client{
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
-	resp, err := client.Get(ts.URL + "/?token=" + s.token)
+	// The launch token (in the URL) authorizes the cookie exchange...
+	resp, err := client.Get(ts.URL + "/?token=" + s.launchToken)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +70,7 @@ func TestAuth_QueryTokenRedirectsAndSetsCookie(t *testing.T) {
 	if strings.Contains(loc, "token=") {
 		t.Fatalf("redirect Location still contains token: %q", loc)
 	}
+	// ...and the cookie carries the SESSION secret, not the launch token.
 	var found bool
 	for _, c := range resp.Cookies() {
 		if c.Name == cookieName && c.Value == s.token {
@@ -77,6 +79,15 @@ func TestAuth_QueryTokenRedirectsAndSetsCookie(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("session cookie not set on query-token auth")
+	}
+	// Single-use: the launch token is now spent — a second exchange is rejected.
+	resp2, err := client.Get(ts.URL + "/?token=" + s.launchToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("reused launch token got %d, want 401", resp2.StatusCode)
 	}
 }
 

@@ -36,8 +36,19 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			return
 		}
 		if isStateChanging(r.Method) {
-			if o := r.Header.Get("Origin"); o != "" && !validLoopbackOrigin(o) {
-				http.Error(w, "forbidden origin", http.StatusForbidden)
+			// Fail CLOSED: a state-changing request must carry a same-origin
+			// signal — a loopback Origin (modern browsers send it on every
+			// POST/PUT/DELETE, incl. same-origin) or Sec-Fetch-Site:same-origin.
+			// A request with neither (a non-browser client) is rejected even if
+			// it holds the token.
+			o := r.Header.Get("Origin")
+			if o != "" {
+				if !validLoopbackOrigin(o) {
+					http.Error(w, "forbidden origin", http.StatusForbidden)
+					return
+				}
+			} else if r.Header.Get("Sec-Fetch-Site") != "same-origin" {
+				http.Error(w, "forbidden: cross-site or unverifiable request", http.StatusForbidden)
 				return
 			}
 		}
@@ -89,13 +100,16 @@ func validLoopbackOrigin(origin string) bool {
 	return validLoopbackHost(u.Host)
 }
 
-// requireToken authenticates every request. The session token may arrive via:
-//   - ?token=... query string (only on the initial page load from the launcher URL)
-//   - X-Rafter-Secrets-Token header (used by the in-page client for API calls)
-//   - rafter_secrets_session cookie (set after a successful query-string auth)
+// requireToken authenticates every request. Credentials arrive via:
+//   - ?token=... query string — the SINGLE-USE launch token, valid only for the
+//     first cookie exchange (it travels in the launch URL → browser argv, so it
+//     must die after one use).
+//   - rafter_secrets_session cookie — the long-lived session secret, set after a
+//     successful launch exchange. Never appears in any URL.
+//   - X-Rafter-Secrets-Token header — the session secret, for the in-page client.
 //
-// On a successful query-string auth we set the cookie and strip the token from
-// the URL so it doesn't linger in browser history.
+// On the launch exchange we burn the launch token (atomic CAS), set the session
+// cookie, and strip the token from the URL.
 func (s *Server) requireToken(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.authedByCookie(r) || s.authedByHeader(r) {
@@ -103,6 +117,11 @@ func (s *Server) requireToken(next http.Handler) http.Handler {
 			return
 		}
 		if s.authedByQuery(r) {
+			// Single-use: only the first exchange with the launch token wins.
+			if !s.launchUsed.CompareAndSwap(false, true) {
+				http.Error(w, "this launch link was already used — restart rafter-secrets for a fresh one", http.StatusUnauthorized)
+				return
+			}
 			http.SetCookie(w, &http.Cookie{
 				Name:     cookieName,
 				Value:    s.token,
@@ -111,8 +130,8 @@ func (s *Server) requireToken(next http.Handler) http.Handler {
 				SameSite: http.SameSiteStrictMode,
 				MaxAge:   cookieMaxAge,
 			})
-			// Redirect to a token-less URL so the secret doesn't end up in
-			// browser history or the referer header on subsequent navigation.
+			// Redirect to a token-less URL so the launch token doesn't linger in
+			// browser history or the referer header.
 			redirectURL := *r.URL
 			q := redirectURL.Query()
 			q.Del(queryParam)
@@ -126,7 +145,7 @@ func (s *Server) requireToken(next http.Handler) http.Handler {
 
 func (s *Server) authedByQuery(r *http.Request) bool {
 	got := r.URL.Query().Get(queryParam)
-	return got != "" && constTimeEq(got, s.token)
+	return got != "" && constTimeEq(got, s.launchToken)
 }
 
 func (s *Server) authedByHeader(r *http.Request) bool {
