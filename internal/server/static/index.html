@@ -86,7 +86,7 @@
   .lede b { color: var(--dim); font-weight: 550; }
 
   /* figures */
-  .figures { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 34px; }
+  .figures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 34px; }
   .figure { padding: 17px 18px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); box-shadow: var(--shadow-card); display: flex; flex-direction: column; }
   .figure .ftop { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
   .figure .flbl { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; white-space: nowrap; }
@@ -131,6 +131,16 @@
   .row .chev { color: var(--faint); display: flex; transition: transform .14s; }
   .row:hover .chev { transform: translateX(2px); color: var(--muted); }
   .treepath { font-family: var(--mono); font-size: 12px; color: var(--faint); margin: 16px 4px 2px; }
+  /* collapsible group headers (folder / project views) — bigger than the rows */
+  .group { margin-top: 4px; }
+  .grouphead { display: flex; align-items: center; gap: 11px; cursor: pointer; user-select: none; padding: 16px 6px 11px; border-radius: 11px; transition: background .12s; }
+  .grouphead:hover { background: var(--surface); }
+  .grouphead .gchev { display: inline-flex; color: var(--faint); transition: transform .15s; }
+  .grouphead .gchev svg { width: 17px; height: 17px; }
+  .grouphead:not(.collapsed) .gchev { transform: rotate(90deg); }
+  .grouphead .gtitle { font-size: 18.5px; font-weight: 640; letter-spacing: -.014em; color: var(--text); }
+  .grouphead .gcount { font-family: var(--mono); font-size: 13px; color: var(--faint); }
+  .grouphead:hover .gchev { color: var(--muted); }
   /* Secrets / Environment lens */
   .lens { display: inline-flex; gap: 4px; margin: 18px 0 -6px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 13px; }
   .lensbtn { font: inherit; font-size: 14px; font-weight: 560; cursor: pointer; background: transparent; border: none; color: var(--muted); padding: 8px 16px; border-radius: 9px; display: inline-flex; align-items: center; gap: 8px; transition: background .14s, color .14s; }
@@ -211,7 +221,9 @@
   .finding .fb { font-size: 13.5px; color: var(--dim); margin: 9px 0 0; line-height: 1.55; } .finding .fb b { color: var(--text); font-weight: 600; }
   .finding .fb .fnote { color: var(--muted); font-size: 12.5px; }
   .finding code { font-family: var(--mono); font-size: 11.5px; background: var(--card-2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; color: var(--dim); }
-  .finding .fact { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 9px; align-items: center; } .finding .fact .hint { font-size: 12px; color: var(--muted); }
+  .fact { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; } .fact .hint { font-size: 12px; color: var(--muted); }
+  .finding .fact { margin-top: 12px; }
+  .locs li { gap: 11px; } .locs .li-open { flex-shrink: 0; margin-left: auto; }
   .finding.danger { border-color: var(--red-line); background: var(--red-bg); } .finding.danger .fh { color: var(--red); }
   .finding.warn { border-color: var(--amber-line); background: var(--amber-bg); } .finding.warn .fh { color: var(--amber); }
   .finding.info { border-color: var(--blue-line); background: var(--blue-bg); } .finding.info .fh { color: var(--blue); }

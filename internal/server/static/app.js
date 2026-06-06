@@ -20,8 +20,10 @@
 
   let state = { secrets: [], scan_home: null };
   let selectedId = null;
-  let view = localStorage.getItem("rafter.view") || "secret";
+  let view = localStorage.getItem("rafter.view") || "folder";
   let tourChecked = false;
+  let collapsedGroups = (() => { try { return new Set(JSON.parse(localStorage.getItem("rafter.collapsed") || "[]")); } catch (_) { return new Set(); } })();
+  function persistCollapsed() { try { localStorage.setItem("rafter.collapsed", JSON.stringify(Array.from(collapsedGroups))); } catch (_) {} }
   const revealed = new Map();
   let saveTimer = null, saveState = "idle";
 
@@ -97,7 +99,11 @@
   // is omitted and means unknown.)
   function notGitignored(s) { return fileLocations(s).some((f) => f.in_git_repo === true && f.appears_in_git_history !== true && f.in_gitignore === false); }
   function gitIgnoredOk(s) { return !inGitHistory(s) && fileLocations(s).some((f) => f.in_gitignore === true); }
-  function hasWarnings(s) { return !isStale(s) && (inGitHistory(s) || notGitignored(s) || !!exposure(s) || isDuplicated(s) || isExpiringSoon(s)); }
+  // Note: file permissions ("exposed") deliberately do NOT flag a secret as
+  // "worth a look" — chmod only stops other accounts, which is marginal. The
+  // one permissions surface left is the calm Lock-down banner + the per-secret
+  // button. Real risk = leak vectors (git) + lifecycle.
+  function hasWarnings(s) { return !isStale(s) && (inGitHistory(s) || notGitignored(s) || isDuplicated(s) || isExpiringSoon(s)); }
   function needsAttention(s) { return hasWarnings(s) && !isIgnored(s); }
 
   // ---- ignored warnings (UI-local) -------------------------------------
@@ -225,7 +231,6 @@
 
     const attn = pool.filter(needsAttention);
     if (view === "folder") {
-      content.appendChild(section("Where your secrets live", null, null));
       content.appendChild(renderFolder(pool));
     } else if (view === "project") {
       renderProjects(pool).forEach((n) => content.appendChild(n));
@@ -292,15 +297,13 @@
   function renderFigures(pool) {
     const live = (pool || state.secrets).filter((s) => !isStale(s));
     const total = live.length;
-    const exposed = live.filter((s) => exposure(s)).length;
+    const committed = live.filter(inGitHistory).length;
     const dup = live.filter(isDuplicated).length;
-    const priv = live.filter((s) => !exposure(s) && !isDuplicated(s) && (fileLocations(s).length > 0)).length;
     const pct = (n) => total ? Math.max(4, Math.round((n / total) * 100)) : 0;
     const wrap = el("div", { class: "figures" });
     wrap.appendChild(figure("Tracked", total, null, "ink", 100, "saved in plain files"));
-    wrap.appendChild(figure("Exposed", exposed, exposed ? ["bad", "Action"] : ["ok", "Clear"], "red", pct(exposed), "readable by other accounts"));
+    wrap.appendChild(figure("Committed to git", committed, committed ? ["bad", "Leak"] : ["ok", "Clear"], "red", pct(committed), "may be pushed somewhere"));
     wrap.appendChild(figure("In 2+ places", dup, dup ? ["warn", "Action"] : ["ok", "Good"], "amber", pct(dup), "easy to lose track of"));
-    wrap.appendChild(figure("Private", priv, ["ok", "Good"], "green", pct(priv), "stored only for you"));
     return wrap;
   }
   function figure(label, n, badge, barColor, barPct, sub) {
@@ -330,9 +333,8 @@
   }
   function renderRow(s, flagged) {
     const v = vendorFor(s.key_name);
-    const ex = exposure(s);
     let cls = "row";
-    if (flagged) cls += ex && ex.level === "other" ? " flag danger" : " flag warn";
+    if (flagged) cls += (inGitHistory(s) || (isExpiringSoon(s) && daysUntilExpiry(s) < 0)) ? " flag danger" : " flag warn";
     if (isStale(s)) cls += " stale";
     const row = el("div", { class: cls });
     row.appendChild(el("div", { class: "tile", text: v.chip }));
@@ -376,34 +378,44 @@
     if (isIgnored(s) && hasWarnings(s)) return pill("muted", "Warning ignored");
     if (inGitHistory(s)) return pill("danger", "Committed to git");
     if (notGitignored(s)) return pill("warn", "Not git-ignored");
-    const ex = exposure(s);
-    if (ex && ex.level === "other") return pill("danger", "Other accounts can read this");
-    if (ex && ex.level === "group") return pill("warn", "Readable by your group");
     if (isDuplicated(s)) return pill("info", "Saved in " + fileLocations(s).length + " places");
     if (isExpiringSoon(s)) { const n = daysUntilExpiry(s); return pill(n < 0 ? "danger" : "warn", n < 0 ? "Expired" : n === 0 ? "Expires today" : "Expires in " + n + "d"); }
     if (isManual(s)) return pill("manual", "You're tracking this");
-    return pill("ok", "Private to you");
+    return pill("muted", "Tracked");
   }
   function pill(cls, text) { return el("span", { class: "pill " + cls }, [ cls === "manual" ? null : el("span", { class: "pd" }), document.createTextNode(text) ]); }
 
   // ---- folder + project views -----------------------------------------
+  // collapsibleGroup is a big, clickable group header (greater hierarchy than
+  // the rows) with its rows below; collapse state persists per group key.
+  function collapsibleGroup(label, count, rowsNode, key) {
+    const collapsed = collapsedGroups.has(key);
+    const head = el("div", { class: "grouphead" + (collapsed ? " collapsed" : "") }, [
+      el("span", { class: "gchev", html: ICON.chev }),
+      el("span", { class: "gtitle", text: label }),
+      count != null ? el("span", { class: "gcount", text: count }) : null,
+    ]);
+    head.addEventListener("click", () => { if (collapsedGroups.has(key)) collapsedGroups.delete(key); else collapsedGroups.add(key); persistCollapsed(); render(); });
+    const wrap = el("div", { class: "groupwrap" });
+    if (!collapsed) wrap.appendChild(rowsNode);
+    return el("div", { class: "group" }, [ head, wrap ]);
+  }
   function renderFolder(secrets) {
     const byDir = new Map();
     for (const s of secrets) { const f = fileLocations(s)[0]; const d = f ? prettyPath(dirOf(f.path)) : "(added by hand)"; if (!byDir.has(d)) byDir.set(d, []); byDir.get(d).push(s); }
-    const frag = document.createDocumentFragment();
+    const box = el("div");
     for (const d of Array.from(byDir.keys()).sort()) {
-      frag.appendChild(el("div", { class: "treepath", text: d + "/" }));
-      frag.appendChild(renderList(byDir.get(d).sort(byName), false));
+      box.appendChild(collapsibleGroup(d + "/", byDir.get(d).length, renderList(byDir.get(d).sort(byName), false), "folder:" + d));
     }
-    const box = el("div"); box.appendChild(frag); return box;
+    return box;
   }
   function renderProjects(secrets) {
     const groups = new Map(); const untagged = [];
     for (const s of secrets) { const ps = projectsOf(s); if (!ps.length) { untagged.push(s); continue; } for (const p of ps) { if (!groups.has(p)) groups.set(p, []); groups.get(p).push(s); } }
     const out = [];
     out.push(el("div", { class: "viewnote", html: "Grouped by <b>project</b>. Open any secret to tag it — we suggest the repo it lives in, so bucketing is usually one click." }));
-    for (const name of Array.from(groups.keys()).sort()) { out.push(section(name, groups.get(name).length, null)); out.push(renderList(groups.get(name).sort(byName), false)); }
-    if (untagged.length) { out.push(section("No project yet", untagged.length, "open one to bucket it")); out.push(renderList(untagged.sort(byName), false)); }
+    for (const name of Array.from(groups.keys()).sort()) { out.push(collapsibleGroup(name, groups.get(name).length, renderList(groups.get(name).sort(byName), false), "project:" + name)); }
+    if (untagged.length) { out.push(collapsibleGroup("No project yet", untagged.length, renderList(untagged.sort(byName), false), "project:__untagged__")); }
     return out;
   }
 
@@ -715,7 +727,6 @@
         el("button", { class: "btn primary sm", onclick: () => rotateFix(s), text: "Replace the value" }),
         el("span", { class: "hint", text: "updates your file(s) · previewed · undoable" }),
       ]));
-      body.appendChild(rotateGuide(s));
     }
 
     clear(drawerEl);
@@ -744,14 +755,11 @@
     }
     const ex = exposure(s);
     if (ex) {
-      const danger = ex.level === "other";
-      out.push(el("div", { class: "finding " + (danger ? "danger" : "warn") }, [
-        el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.warn }), document.createTextNode(danger ? "Other accounts can read this file" : "Your group can read it") ]),
-        el("p", { class: "fb", html: (danger
-          ? "Any other account on this computer can open <code>" + escapeHtml(splitPath(ex.path).base) + "</code> — not just you. "
-          : "Other accounts in your group can read <code>" + escapeHtml(splitPath(ex.path).base) + "</code>. ")
-          + "Lock it down so only your account can — the secret itself doesn’t change, and you can undo it. <span class=\"fnote\">(This stops other accounts, not the programs you run as yourself.)</span>" }),
-        el("div", { class: "fact" }, [ el("button", { class: "btn primary sm", onclick: () => secureFix(s), text: "Lock it down" }), el("span", { class: "hint", text: "previewed first · undoable" }) ]),
+      // Calm, compact — just the secret-specific CTA. (Permissions is marginal;
+      // the verbose explanation was cut.)
+      out.push(el("div", { class: "finding" }, [
+        el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.lock }), document.createTextNode("Readable by other accounts on this computer") ]),
+        el("div", { class: "fact", style: "margin-top:11px" }, [ el("button", { class: "btn primary sm", onclick: () => secureFix(s), text: "Lock it down" }), el("span", { class: "hint", text: "previewed · undoable" }) ]),
       ]));
     }
     if (isDuplicated(s)) out.push(el("div", { class: "finding warn" }, [ el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.copy }), document.createTextNode("Saved in " + fileLocations(s).length + " files") ]), el("p", { class: "fb", text: "Replace it once and you'll need to update every copy, or the apps using the old ones break." }) ]));
@@ -763,15 +771,23 @@
     const ul = el("ul", { class: "locs" });
     for (const f of s.found_in || []) {
       if (!f.path && !f.keystore) continue;
-      const sp = f.path ? splitPath(f.path) : { dir: "", base: "" };
-      const pm = parsePerm(f.permissions);
       let ls = null;
       if (f.source_type === "manual") ls = el("div", { class: "ls", text: "you noted this" });
       else if (f.keystore) ls = el("div", { class: "ls", text: "system keyring · viewing here is coming soon" });
-      else { const parts = []; if (pm && pm.other) parts.push(el("span", { class: "warnflag", text: "any app can read it" })); else if (pm && pm.group) parts.push(el("span", { class: "warnflag group", text: "your group can read it" })); else parts.push(document.createTextNode("private to you")); ls = el("div", { class: "ls" }, parts); }
-      ul.appendChild(el("li", {}, [ el("span", { class: "li-ico", html: f.keystore ? ICON.lock : ICON.file }), el("div", { style: "min-width:0" }, [ el("div", { class: "lp", text: f.path ? prettyPath(f.path) : keystoreName(f.keystore) }), ls ]) ]));
+      const li = el("li", {}, [
+        el("span", { class: "li-ico", html: f.keystore ? ICON.lock : ICON.file }),
+        el("div", { style: "min-width:0" }, [ el("div", { class: "lp", text: f.path ? prettyPath(f.path) : keystoreName(f.keystore) }), ls ]),
+      ]);
+      // Open the file in the user's default editor — the simple alternative to
+      // the (cut) "how to replace this key" walkthrough.
+      if (f.path && f.source_type !== "manual") li.appendChild(el("button", { class: "btn ghost sm li-open", title: "Open this file in your editor", onclick: () => openFile(f.path), text: "Open" }));
+      ul.appendChild(li);
     }
     return ul;
+  }
+  async function openFile(path) {
+    try { await api("/api/open", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) }); setToast("Opening " + splitPath(path).base + " in your editor…"); }
+    catch (e) { setToast("Couldn't open it: " + e.message, true); }
   }
   function keystoreName(k) { return /keychain/i.test(k) ? "macOS Keychain" : "System keyring"; }
 
@@ -868,15 +884,15 @@
     let sc = null;
     try { sc = await api("/api/scan-config"); } catch (_) {}
     const folders = knownFolders(sc);
-    const sel = el("select");
-    sel.appendChild(el("option", { value: "", text: "— choose a folder (optional) —" }));
-    for (const fol of folders) sel.appendChild(el("option", { value: fol, text: fol }));
-    sel.appendChild(el("option", { value: "__other__", text: "Other folder…" }));
+    const sel = el("select", { class: "pathsel" });
+    sel.appendChild(el("option", { value: "", text: "Pick a folder…" }));
+    if (folders.length) { const og = el("optgroup", { label: "Folders you use" }); for (const fol of folders) og.appendChild(el("option", { value: fol, text: fol })); sel.appendChild(og); }
+    sel.appendChild(el("option", { value: "__other__", text: "＋  A different folder…" }));
     const other = el("input", { class: "pathother", type: "text", placeholder: "type a folder path, e.g. ~/code/app" });
     other.style.display = "none";
     sel.addEventListener("change", () => { const isOther = sel.value === "__other__"; other.style.display = isOther ? "block" : "none"; if (isOther) other.focus(); });
     f.path = { get value() { return sel.value === "__other__" ? (other.value || "") : sel.value; } };
-    const folderField = el("label", {}, [ el("div", { class: "lbl" }, [ document.createTextNode("Which folder is it in?"), el("span", { class: "help", title: "Just a note — nothing is opened. Pick a folder you already use, or choose “Other folder”.", text: "?" }) ]), sel, other ]);
+    const folderField = el("label", {}, [ el("div", { class: "lbl" }, [ document.createTextNode("Which folder is it in?  (optional)"), el("span", { class: "help", title: "Just a note — nothing is opened.", text: "?" }) ]), sel, other ]);
 
     const modal = el("div", { class: "modal" }, [
       el("div", { class: "mhead" }, [ el("h2", { text: "Add a secret to track" }), el("button", { class: "btn ghost sm mclose", onclick: closeModal, text: "✕" }) ]),
