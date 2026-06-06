@@ -91,8 +91,13 @@
   function isDuplicated(s) { return fileLocations(s).length > 1; }
   function isStale(s) { return !!(s.annotation && s.annotation.stale); }
   function projectsOf(s) { return (s.annotation && s.annotation.tags) || []; }
-  function inGitHistory(s) { return fileLocations(s).some((f) => f.appears_in_git_history); }
-  function hasWarnings(s) { return !isStale(s) && (inGitHistory(s) || !!exposure(s) || isDuplicated(s) || isExpiringSoon(s)); }
+  function inGitHistory(s) { return fileLocations(s).some((f) => f.appears_in_git_history === true); }
+  // In a repo, not committed, and explicitly not ignored → one `git add` from
+  // being committed and pushed. (in_gitignore === false means we checked; nil
+  // is omitted and means unknown.)
+  function notGitignored(s) { return fileLocations(s).some((f) => f.in_git_repo === true && f.appears_in_git_history !== true && f.in_gitignore === false); }
+  function gitIgnoredOk(s) { return !inGitHistory(s) && fileLocations(s).some((f) => f.in_gitignore === true); }
+  function hasWarnings(s) { return !isStale(s) && (inGitHistory(s) || notGitignored(s) || !!exposure(s) || isDuplicated(s) || isExpiringSoon(s)); }
   function needsAttention(s) { return hasWarnings(s) && !isIgnored(s); }
 
   // ---- ignored warnings (UI-local) -------------------------------------
@@ -293,7 +298,7 @@
     const pct = (n) => total ? Math.max(4, Math.round((n / total) * 100)) : 0;
     const wrap = el("div", { class: "figures" });
     wrap.appendChild(figure("Tracked", total, null, "ink", 100, "saved in plain files"));
-    wrap.appendChild(figure("Exposed", exposed, exposed ? ["bad", "Action"] : ["ok", "Clear"], "red", pct(exposed), "readable by other apps"));
+    wrap.appendChild(figure("Exposed", exposed, exposed ? ["bad", "Action"] : ["ok", "Clear"], "red", pct(exposed), "readable by other accounts"));
     wrap.appendChild(figure("In 2+ places", dup, dup ? ["warn", "Action"] : ["ok", "Good"], "amber", pct(dup), "easy to lose track of"));
     wrap.appendChild(figure("Private", priv, ["ok", "Good"], "green", pct(priv), "stored only for you"));
     return wrap;
@@ -370,8 +375,9 @@
     if (isStale(s)) return pill("muted", "Not in use");
     if (isIgnored(s) && hasWarnings(s)) return pill("muted", "Warning ignored");
     if (inGitHistory(s)) return pill("danger", "Committed to git");
+    if (notGitignored(s)) return pill("warn", "Not git-ignored");
     const ex = exposure(s);
-    if (ex && ex.level === "other") return pill("danger", "Any app can read this");
+    if (ex && ex.level === "other") return pill("danger", "Other accounts can read this");
     if (ex && ex.level === "group") return pill("warn", "Readable by your group");
     if (isDuplicated(s)) return pill("info", "Saved in " + fileLocations(s).length + " places");
     if (isExpiringSoon(s)) { const n = daysUntilExpiry(s); return pill(n < 0 ? "danger" : "warn", n < 0 ? "Expired" : n === 0 ? "Expires today" : "Expires in " + n + "d"); }
@@ -536,7 +542,7 @@
     return el("div", { class: "lockall" }, [
       el("span", { class: "ci", html: ICON.shield }),
       el("div", { class: "lockall-txt" }, [
-        el("div", { class: "lockall-h", text: n + " secret" + (n > 1 ? "s are" : " is") + " readable by other apps" }),
+        el("div", { class: "lockall-h", text: n + " secret" + (n > 1 ? "s are" : " is") + " readable by other accounts on this computer" }),
         el("div", { class: "lockall-s", text: "Make them private to you — previewed first, and undoable." }),
       ]),
       el("button", { class: "btn primary", onclick: secureAllFix, text: "Lock them all down" }),
@@ -555,15 +561,19 @@
     function go(n) { i = n; draw(); }
     function next() { i < screens.length - 1 ? go(i + 1) : close(true); }
     function draw() { screens[i](); }
+    // Mount the (animated) scrim ONCE; screen changes only swap the body, so the
+    // scrim-in fade doesn't replay on every Next → no flash.
+    const skip = el("button", { class: "wt-skip", onclick: () => close(true), text: "Skip tour" });
+    const body = el("div", { class: "wt" });
+    clear(walkthroughRoot);
+    walkthroughRoot.appendChild(el("div", { class: "wt-scrim" }, [skip, body]));
+    function setBody(kids) { clear(body); for (const k of kids) if (k != null) body.appendChild(k); }
     function frame(kids, buttons) {
+      skip.textContent = "Skip tour";
       const dots = el("div", { class: "wt-dots" });
       for (let k = 0; k < screens.length; k++) dots.appendChild(el("div", { class: "wt-dot" + (k === i ? " on" : "") }));
       const actions = el("div", { class: "wt-actions" }, [dots].concat(buttons || [el("button", { class: "btn primary", onclick: next, text: "Next →" })]));
-      clear(walkthroughRoot);
-      walkthroughRoot.appendChild(el("div", { class: "wt-scrim" }, [
-        el("button", { class: "wt-skip", onclick: () => close(true), text: "Skip tour" }),
-        el("div", { class: "wt" }, kids.concat([actions])),
-      ]));
+      setBody(kids.concat([actions]));
     }
     function welcome() {
       frame([
@@ -591,14 +601,14 @@
     function makePrivate() {
       const box = lock.done
         ? el("div", { class: "wt-lockbox" }, [el("span", { class: "wt-done" }, [el("span", { class: "ci", html: ICON.check }), document.createTextNode(" " + lock.n + (lock.n === 1 ? " file is" : " files are") + " now private to you.")])])
-        : el("div", { class: "wt-lockbox" }, [el("span", { html: lock.checked ? (lock.files ? "<b>" + lock.files + "</b> of your secret files can be read by other apps right now." : "Good news — your secret files are already private to you.") : "Checking your files…" })]);
+        : el("div", { class: "wt-lockbox" }, [el("span", { html: lock.checked ? (lock.files ? "<b>" + lock.files + "</b> of your secret files can be opened by other accounts on this computer right now." : "Good news — your secret files are already private to you.") : "Checking your files…" })]);
       let buttons;
       if (lock.done || (lock.checked && lock.files === 0)) buttons = [el("button", { class: "btn primary", onclick: next, text: "Next →" })];
       else { const lb = el("button", { class: "btn primary", onclick: doLock, text: "Lock them down" }); if (!lock.checked) lb.disabled = true; buttons = [lb, el("button", { class: "btn", onclick: next, text: "Skip for now" })]; }
       frame([
         el("div", { class: "wt-eyebrow", text: "2 · Make them private" }),
         el("h1", { text: "Make sure only you can open them." }),
-        el("p", { html: "Some of your secret files can be read by <b>any app on this computer</b> — including AI coding agents. We can tighten them so only you can open them. This changes who can open the file, never the secret itself — and you can undo it." }),
+        el("p", { html: "Some of your secret files can be opened by <b>other accounts on this computer</b> — not just you. We can make them private to your account. This changes who can open the file, never the secret itself — and you can undo it." }),
         box,
       ], buttons);
       if (!lock.checked && !lock.done) {
@@ -620,17 +630,14 @@
       ], [el("button", { class: "btn primary", onclick: () => close(true), text: "Go to my dashboard" }), el("button", { class: "btn", onclick: learnMore, text: "Learn a bit more" })]);
     }
     function learnMore() {
-      clear(walkthroughRoot);
-      walkthroughRoot.appendChild(el("div", { class: "wt-scrim" }, [
-        el("button", { class: "wt-skip", onclick: () => close(true), text: "Done" }),
-        el("div", { class: "wt" }, [
-          el("div", { class: "wt-eyebrow", text: "Good to know" }),
-          el("h1", { text: "Two things worth understanding." }),
-          el("div", { class: "wt-card" }, [el("h3", { text: "Revoke vs. delete" }), el("p", { html: "When you’re done with a key, <b>revoke</b> it at the site you got it from (Stripe, AWS, …). Deleting your copy isn’t enough — if someone else already grabbed it, they can still use it until you revoke. Rafter shows you the key and links you there; you do the revoking on their site." })]),
-          el("div", { class: "wt-card" }, [el("h3", { text: "Rotating a key" }), el("p", { text: "Rotating just means turning off the old key and switching to a new one. If you ever think your device was compromised, rotate — it’s the safe reset." })]),
-          el("div", { class: "wt-actions" }, [el("div", { class: "wt-dots" }), el("button", { class: "btn primary", onclick: () => close(true), text: "Go to my dashboard" })]),
-        ]),
-      ]));
+      skip.textContent = "Done";
+      setBody([
+        el("div", { class: "wt-eyebrow", text: "Good to know" }),
+        el("h1", { text: "Two things worth understanding." }),
+        el("div", { class: "wt-card" }, [el("h3", { text: "Revoke vs. delete" }), el("p", { html: "When you’re done with a key, <b>revoke</b> it at the site you got it from (Stripe, AWS, …). Deleting your copy isn’t enough — if someone else already grabbed it, they can still use it until you revoke. Rafter shows you the key and links you there; you do the revoking on their site." })]),
+        el("div", { class: "wt-card" }, [el("h3", { text: "Rotating a key" }), el("p", { text: "Rotating just means turning off the old key and switching to a new one. If you ever think your device was compromised, rotate — it’s the safe reset." })]),
+        el("div", { class: "wt-actions" }, [el("div", { class: "wt-dots" }), el("button", { class: "btn primary", onclick: () => close(true), text: "Go to my dashboard" })]),
+      ]);
     }
     draw();
   }
@@ -643,8 +650,16 @@
     const s = state.secrets.find((x) => x.id === selectedId);
     if (!s) { closeDrawer(); return; }
     const v = vendorFor(s.key_name);
-    clear(drawerRoot);
-    const scrim = el("div", { class: "scrim", onclick: closeDrawer });
+    // Mount the animated scrim + drawer shell once; later renders swap only the
+    // body so drawer-in/scrim-in don't replay (no flash). Scroll is preserved.
+    let drawerEl = drawerRoot.querySelector(".drawer");
+    if (!drawerEl) {
+      clear(drawerRoot);
+      drawerRoot.appendChild(el("div", { class: "scrim", onclick: closeDrawer }));
+      drawerEl = el("div", { class: "drawer" });
+      drawerRoot.appendChild(drawerEl);
+    }
+    const prevScroll = (drawerEl.querySelector(".dscroll") || {}).scrollTop || 0;
     const body = el("div", { class: "dscroll" });
 
     body.appendChild(el("div", { class: "dhead" }, [
@@ -703,8 +718,9 @@
       body.appendChild(rotateGuide(s));
     }
 
-    drawerRoot.appendChild(scrim);
-    drawerRoot.appendChild(el("div", { class: "drawer" }, [ body ]));
+    clear(drawerEl);
+    drawerEl.appendChild(body);
+    body.scrollTop = prevScroll;
   }
 
   function buildFindings(s) {
@@ -715,15 +731,26 @@
         el("p", { class: "fb", html: "It’s tracked in a git repo, so it may already be in your history — and pushed somewhere public. Locking the file down won’t help once it’s in git: <b>rotate this key</b>, then remove the value from the file." }),
       ]));
     }
+    if (notGitignored(s)) {
+      out.push(el("div", { class: "finding warn" }, [
+        el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.warn }), document.createTextNode("Not in .gitignore") ]),
+        el("p", { class: "fb", html: "This file is inside a git repo but <b>isn’t git-ignored</b> — one <code>git add</code> away from being committed and pushed. Add it to <code>.gitignore</code> so it can’t be." }),
+      ]));
+    } else if (gitIgnoredOk(s)) {
+      out.push(el("div", { class: "finding ok" }, [
+        el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.check }), document.createTextNode("Ignored by git") ]),
+        el("p", { class: "fb", html: "This file is in <code>.gitignore</code>, so it won’t be committed or pushed — the right place to keep a local secret." }),
+      ]));
+    }
     const ex = exposure(s);
     if (ex) {
       const danger = ex.level === "other";
       out.push(el("div", { class: "finding " + (danger ? "danger" : "warn") }, [
-        el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.warn }), document.createTextNode(danger ? "Any app or AI agent can read it" : "Your group can read it") ]),
+        el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.warn }), document.createTextNode(danger ? "Other accounts can read this file" : "Your group can read it") ]),
         el("p", { class: "fb", html: (danger
-          ? "The file <code>" + escapeHtml(splitPath(ex.path).base) + "</code> is readable by <b>any program you run</b>, including AI coding agents. "
+          ? "Any other account on this computer can open <code>" + escapeHtml(splitPath(ex.path).base) + "</code> — not just you. "
           : "Other accounts in your group can read <code>" + escapeHtml(splitPath(ex.path).base) + "</code>. ")
-          + "Lock it down and only you can read it — the secret itself doesn’t change, and you can undo it." }),
+          + "Lock it down so only your account can — the secret itself doesn’t change, and you can undo it. <span class=\"fnote\">(This stops other accounts, not the programs you run as yourself.)</span>" }),
         el("div", { class: "fact" }, [ el("button", { class: "btn primary sm", onclick: () => secureFix(s), text: "Lock it down" }), el("span", { class: "hint", text: "previewed first · undoable" }) ]),
       ]));
     }
