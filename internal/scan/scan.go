@@ -41,6 +41,10 @@ type Result struct {
 	// this Run, in scan order. The drift watcher uses this to publish
 	// SSE events; CLI callers ignore it.
 	Changes []Change
+
+	// git answers "is this file in/tracked by git?" for the leak signal.
+	// Unexported — never serialised; one per Run.
+	git *gitInfo
 }
 
 // Change is the per-secret summary of one Upsert during a scan. It
@@ -66,7 +70,7 @@ func Run(ctx context.Context, doc *storage.Global, cfg storage.ScanConfig) (*Res
 	if doc == nil {
 		return nil, errors.New("scan: nil doc")
 	}
-	r := &Result{}
+	r := &Result{git: newGitInfo()}
 	excludes := compileExcludes(cfg.Excludes)
 
 	roots := canonicalRoots(cfg.Roots, r)

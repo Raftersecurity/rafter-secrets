@@ -142,7 +142,21 @@ func walkOne(
 		r.Errors = append(r.Errors, err)
 		return
 	}
-	for _, fs := range found {
+	for i := range found {
+		fs := &found[i]
+		// Enrich with git status for the "secret committed to git" signal.
+		if fs.Source.Path != "" {
+			if inRepo, committed := r.git.status(fs.Source.Path); inRepo {
+				t := true
+				fs.Source.InGitRepo = &t
+				r.FilesInGitRepos++
+				if committed {
+					c := true
+					fs.Source.AppearsInGitHistory = &c
+					r.FilesCommittedInHistory++
+				}
+			}
+		}
 		out := doc.Upsert(storage.Upsertable{
 			KeyName: fs.KeyName,
 			Value:   fs.Value,

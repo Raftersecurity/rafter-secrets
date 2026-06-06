@@ -89,7 +89,8 @@
   function isDuplicated(s) { return fileLocations(s).length > 1; }
   function isStale(s) { return !!(s.annotation && s.annotation.stale); }
   function projectsOf(s) { return (s.annotation && s.annotation.tags) || []; }
-  function hasWarnings(s) { return !isStale(s) && (!!exposure(s) || isDuplicated(s) || isExpiringSoon(s)); }
+  function inGitHistory(s) { return fileLocations(s).some((f) => f.appears_in_git_history); }
+  function hasWarnings(s) { return !isStale(s) && (inGitHistory(s) || !!exposure(s) || isDuplicated(s) || isExpiringSoon(s)); }
   function needsAttention(s) { return hasWarnings(s) && !isIgnored(s); }
 
   // ---- ignored warnings (UI-local) -------------------------------------
@@ -365,6 +366,7 @@
     if (lens === "env") return pill("muted", "Config");
     if (isStale(s)) return pill("muted", "Not in use");
     if (isIgnored(s) && hasWarnings(s)) return pill("muted", "Warning ignored");
+    if (inGitHistory(s)) return pill("danger", "Committed to git");
     const ex = exposure(s);
     if (ex && ex.level === "other") return pill("danger", "Any app can read this");
     if (ex && ex.level === "group") return pill("warn", "Readable by your group");
@@ -612,6 +614,12 @@
 
   function buildFindings(s) {
     const out = [];
+    if (inGitHistory(s)) {
+      out.push(el("div", { class: "finding danger" }, [
+        el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.warn }), document.createTextNode("This secret is committed to git") ]),
+        el("p", { class: "fb", html: "It’s tracked in a git repo, so it may already be in your history — and pushed somewhere public. Locking the file down won’t help once it’s in git: <b>rotate this key</b>, then remove the value from the file." }),
+      ]));
+    }
     const ex = exposure(s);
     if (ex) {
       const danger = ex.level === "other";
