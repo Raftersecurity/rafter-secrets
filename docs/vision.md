@@ -27,6 +27,39 @@ resolved in favour of the three load-bearing properties below.
    forget**, never persist. *Never owns secrets* = never stores them, never
    keeps them after use.
 
+## What it's for: respect the workflow, flag the leak vectors
+
+Plaintext secrets in `.env` are **not a bug to eradicate** — they're how local
+dev and deployment work. Your app needs `STRIPE_KEY` at runtime; `.env` is the
+standard mechanism; docker-compose and your deploy read it. "Get the plaintext
+off disk" fights the workflow. And `chmod 0600` is marginal: it only stops
+*other user accounts*, never the apps and AI agents you run **as yourself** —
+those are you.
+
+So Rafter's job is **not** "remove your secrets." It's three things that don't
+require eliminating `.env`:
+
+1. **Inventory + hygiene.** See every secret across your files; spot duplicates,
+   staleness, what expires when. Valuable on its own, no remediation implied.
+2. **Leak vectors** — the specific ways a *legitimately-local* secret escapes the
+   device, ranked by real danger:
+   - **Committed to git → pushed.** #1. A `.gitignore`'d `.env` is *correct*; a
+     committed one is the leak. Rafter flags committed, *proactively* flags
+     in-a-repo-but-not-ignored ("one `git add` away"), and green-lights the
+     properly-ignored common case. *(shipped)*
+   - **Cloud-synced** (`~/Dropbox`, iCloud, OneDrive, …) — a "local" secret
+     silently leaving the device. *(planned)*
+   - **Agent/tool readable** — the honest fix isn't `chmod`, it's *don't hand raw
+     files to the agent*: `run` injection + the skill's never-reveal stance.
+   - **Shared / server / backup** — the `chmod` case; real on multi-user boxes,
+     marginal on a laptop.
+3. **Lifecycle** — expiry, scope, rotation, staleness.
+
+The product is **".env manager + leak radar + lifecycle"**, not "vault nag." The
+move-to-a-store path (rung 2 below) is an **opt-in for the subset of secrets you
+decide shouldn't sit in plaintext** (CI, prod-adjacent, a key too sensitive to
+leave loose) — *not* the default goal for every `.env`.
+
 ## What "never own the vault" means in practice
 
 This is the **auditor-that-hands-off** model. When a secret needs a safer home,
@@ -38,12 +71,16 @@ always the user's, never Rafter's.
 
 ## The remediation ladder
 
-1. **Lock it down** — `chmod 0600` the existing plaintext file (owner-only).
-   *Shipped.* The secret is still plaintext, just private to you.
-2. **Move it somewhere safe** — relocate the canonical value into the user's
-   store (OS keychain default; 1Password/others as adapters), rewrite the file
-   to a reference, access via the `run` broker. *The missing rung* (see beads:
-   move-to-keychain, run broker).
+Ordered by how much it actually helps — and **none of it is mandatory.** Most
+secrets are fine where they are (a git-ignored local `.env`).
+
+1. **Lock it down** — `chmod 0600` (owner-only). *Shipped, and the least
+   important rung:* it only stops *other user accounts*, not the programs (or
+   agents) you run as yourself.
+2. **Move it somewhere safe** — *opt-in*, for the subset you choose not to keep
+   in plaintext. Relocate the canonical value into the user's store (OS keychain
+   default; 1Password/others as adapters), rewrite the file to a reference,
+   access via the `run` broker. *Designed; see docs/design/move-to-keychain.md.*
 
 ## The honesty rule for file edits
 
