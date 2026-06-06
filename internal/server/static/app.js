@@ -531,7 +531,7 @@
     return el("div", { class: "lockall" }, [
       el("span", { class: "ci", html: ICON.shield }),
       el("div", { class: "lockall-txt" }, [
-        el("div", { class: "lockall-h", text: n + " secret file" + (n > 1 ? "s are" : " is") + " readable by other apps" }),
+        el("div", { class: "lockall-h", text: n + " secret" + (n > 1 ? "s are" : " is") + " readable by other apps" }),
         el("div", { class: "lockall-s", text: "Make them private to you — previewed first, and undoable." }),
       ]),
       el("button", { class: "btn primary", onclick: secureAllFix, text: "Lock them all down" }),
