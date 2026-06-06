@@ -34,19 +34,32 @@ func TestGitInfo_TrackedVsUntracked(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "untracked.env"), []byte("K=v\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("ignored.env\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "ignored.env"), []byte("K=v\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	gi := newGitInfo()
-	if in, c := gi.status(filepath.Join(root, "committed.env")); !in || !c {
-		t.Errorf("committed.env: inRepo=%v committed=%v, want true true", in, c)
+	check := func(name string, wantIn, wantCommitted, wantIgnored bool) {
+		in, c, ig := gi.status(filepath.Join(root, name))
+		if in != wantIn || c != wantCommitted {
+			t.Errorf("%s: inRepo=%v committed=%v, want %v %v", name, in, c, wantIn, wantCommitted)
+		}
+		if ig == nil || *ig != wantIgnored {
+			t.Errorf("%s: ignored=%v, want %v", name, ig, wantIgnored)
+		}
 	}
-	if in, c := gi.status(filepath.Join(root, "untracked.env")); !in || c {
-		t.Errorf("untracked.env: inRepo=%v committed=%v, want true false", in, c)
-	}
+	check("committed.env", true, true, false)  // tracked, not ignored
+	check("untracked.env", true, false, false) // in repo, not committed, NOT ignored — the risky case
+	check("ignored.env", true, false, true)    // properly ignored — the good case
+
 	outside, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if in, _ := gi.status(filepath.Join(outside, "x.env")); in {
+	if in, _, _ := gi.status(filepath.Join(outside, "x.env")); in {
 		t.Errorf("file outside any repo: inRepo=%v, want false", in)
 	}
 }

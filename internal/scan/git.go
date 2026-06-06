@@ -16,33 +16,51 @@ import (
 // missing it degrades to in-repo detection only. One gitInfo is created per
 // scan.Run, so it picks up changes between scans.
 type gitInfo struct {
-	repoRoots map[string]string          // dir → repo root ("" = not in a repo)
-	tracked   map[string]map[string]bool // repo root → set of tracked abs paths
-	noGit     bool
+	repoRoots   map[string]string          // dir → repo root ("" = not in a repo)
+	tracked     map[string]map[string]bool // repo root → set of tracked abs paths
+	ignoreCache map[string]bool            // abs path → git-ignored?
+	noGit       bool
 }
 
 func newGitInfo() *gitInfo {
-	gi := &gitInfo{repoRoots: map[string]string{}, tracked: map[string]map[string]bool{}}
+	gi := &gitInfo{repoRoots: map[string]string{}, tracked: map[string]map[string]bool{}, ignoreCache: map[string]bool{}}
 	if _, err := exec.LookPath("git"); err != nil {
 		gi.noGit = true
 	}
 	return gi
 }
 
-// status reports whether the absolute file path is in a git repo and whether
-// git tracks it (committed/staged).
-func (g *gitInfo) status(path string) (inRepo, committed bool) {
+// status reports, for an absolute file path: whether it's in a git repo,
+// whether git tracks it (committed/staged), and whether git ignores it. The
+// ignore result is nil when unknown (no git, or not in a repo) so the caller
+// can distinguish "checked, not ignored" (the risky case) from "didn't check".
+func (g *gitInfo) status(path string) (inRepo, committed bool, ignored *bool) {
 	if g == nil || path == "" {
-		return false, false
+		return false, false, nil
 	}
 	root := g.repoRootFor(filepath.Dir(path))
 	if root == "" {
-		return false, false
+		return false, false, nil
 	}
 	if g.noGit {
-		return true, false
+		return true, false, nil
 	}
-	return true, g.trackedFor(root)[path]
+	committed = g.trackedFor(root)[path]
+	ig := g.checkIgnore(root, path)
+	return true, committed, &ig
+}
+
+// checkIgnore reports whether git ignores path (respecting .gitignore, nested
+// ignores, and global excludes). `git check-ignore -q` exits 0 when ignored,
+// 1 when not. Cached per path; a handful of scanned files per repo, so the
+// per-file cost is negligible.
+func (g *gitInfo) checkIgnore(root, path string) bool {
+	if v, ok := g.ignoreCache[path]; ok {
+		return v
+	}
+	ig := exec.Command("git", "-C", root, "check-ignore", "-q", "--", path).Run() == nil
+	g.ignoreCache[path] = ig
+	return ig
 }
 
 // repoRootFor walks up from dir looking for a .git entry (dir OR file — the

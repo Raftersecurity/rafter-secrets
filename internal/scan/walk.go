@@ -146,7 +146,7 @@ func walkOne(
 		fs := &found[i]
 		// Enrich with git status for the "secret committed to git" signal.
 		if fs.Source.Path != "" {
-			if inRepo, committed := r.git.status(fs.Source.Path); inRepo {
+			if inRepo, committed, ignored := r.git.status(fs.Source.Path); inRepo {
 				t := true
 				fs.Source.InGitRepo = &t
 				r.FilesInGitRepos++
@@ -154,6 +154,9 @@ func walkOne(
 					c := true
 					fs.Source.AppearsInGitHistory = &c
 					r.FilesCommittedInHistory++
+				}
+				if ignored != nil {
+					fs.Source.InGitignore = ignored
 				}
 			}
 		}
