@@ -67,15 +67,19 @@ type Telemetry struct {
 // — the spec defines them as the same string. The full value is never stored
 // here; ValuePreview is the only on-disk hint.
 type Secret struct {
-	ID               string              `json:"id"`
-	KeyName          string              `json:"key_name"`
-	ValueFingerprint string              `json:"value_fingerprint"`
-	ValuePreview     string              `json:"value_preview"`
-	FoundIn          []FoundIn           `json:"found_in"`
-	Annotation       Annotation          `json:"annotation"`
-	FirstSeen        time.Time           `json:"first_seen"`
-	LastSeen         time.Time           `json:"last_seen"`
-	ValueHistory     []ValueHistoryEntry `json:"value_history"`
+	ID               string `json:"id"`
+	KeyName          string `json:"key_name"`
+	ValueFingerprint string `json:"value_fingerprint"`
+	ValuePreview     string `json:"value_preview"`
+	// Kind is "secret" or "env" — derived at scan time by internal/classify,
+	// recomputed every scan (not user data). Empty on records written before
+	// the classifier existed; treated as "secret" until the next rescan.
+	Kind         string              `json:"kind,omitempty"`
+	FoundIn      []FoundIn           `json:"found_in"`
+	Annotation   Annotation          `json:"annotation"`
+	FirstSeen    time.Time           `json:"first_seen"`
+	LastSeen     time.Time           `json:"last_seen"`
+	ValueHistory []ValueHistoryEntry `json:"value_history"`
 }
 
 // FoundIn records one location where a Secret was observed. The shape is
@@ -109,6 +113,10 @@ type Annotation struct {
 	RotateURL string   `json:"rotate_url"`
 	Tags      []string `json:"tags"`
 	Stale     bool     `json:"stale"`
+	// OverrideKind lets the user correct the classifier: "secret" or "env"
+	// pins the kind regardless of what classify() derived; empty means auto.
+	// Persists across rescans like the other annotation fields.
+	OverrideKind string `json:"override_kind,omitempty"`
 }
 
 // ValueHistoryEntry records that a secret with this fingerprint was observed

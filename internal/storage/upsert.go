@@ -21,6 +21,9 @@ type Upsertable struct {
 	Value   string
 	Found   FoundIn
 	Now     time.Time
+	// Kind is the classifier's verdict ("secret"/"env") for this observation.
+	// It's recomputed each scan and written onto the Secret on every path.
+	Kind string
 }
 
 // Outcome is the kind of change Upsert applied to the global store.
@@ -93,6 +96,7 @@ func (g *Global) Upsert(u Upsertable) UpsertResult {
 					// bump LastSeen.
 					s.FoundIn[j] = u.Found
 					s.LastSeen = u.Now
+					s.Kind = u.Kind
 					return UpsertResult{Outcome: OutcomeRefreshed, Secret: s}
 				}
 				// DRIFT.
@@ -105,6 +109,7 @@ func (g *Global) Upsert(u Upsertable) UpsertResult {
 				s.ValuePreview = fingerprint.Preview(u.Value)
 				s.FoundIn[j] = u.Found
 				s.LastSeen = u.Now
+				s.Kind = u.Kind
 				return UpsertResult{Outcome: OutcomeDrifted, Secret: s}
 			}
 		}
@@ -123,12 +128,14 @@ func (g *Global) Upsert(u Upsertable) UpsertResult {
 				if k, ok := upsertKey(s.FoundIn[j]); ok && k == uKey {
 					s.FoundIn[j] = u.Found
 					s.LastSeen = u.Now
+					s.Kind = u.Kind
 					return UpsertResult{Outcome: OutcomeRefreshed, Secret: s}
 				}
 			}
 		}
 		s.FoundIn = append(s.FoundIn, u.Found)
 		s.LastSeen = u.Now
+		s.Kind = u.Kind
 		return UpsertResult{Outcome: OutcomeRefreshed, Secret: s}
 	}
 
@@ -138,6 +145,7 @@ func (g *Global) Upsert(u Upsertable) UpsertResult {
 		KeyName:          u.KeyName,
 		ValueFingerprint: newFP,
 		ValuePreview:     fingerprint.Preview(u.Value),
+		Kind:             u.Kind,
 		FoundIn:          []FoundIn{u.Found},
 		Annotation:       Annotation{Tags: []string{}},
 		FirstSeen:        u.Now,

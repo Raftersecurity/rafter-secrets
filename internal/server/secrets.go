@@ -235,11 +235,12 @@ func (s *Server) handleSecretReveal(w http.ResponseWriter, r *http.Request) {
 // is exposed through dedicated endpoints, not piggy-backed on free-form
 // edits.
 type annotationPatch struct {
-	SourceURL string   `json:"source_url"`
-	Owner     string   `json:"owner"`
-	Notes     string   `json:"notes"`
-	RotateURL string   `json:"rotate_url"`
-	Tags      []string `json:"tags"`
+	SourceURL    string   `json:"source_url"`
+	Owner        string   `json:"owner"`
+	Notes        string   `json:"notes"`
+	RotateURL    string   `json:"rotate_url"`
+	Tags         []string `json:"tags"`
+	OverrideKind string   `json:"override_kind"`
 }
 
 func (s *Server) handleSecretAnnotate(w http.ResponseWriter, r *http.Request) {
@@ -276,6 +277,12 @@ func (s *Server) handleSecretAnnotate(w http.ResponseWriter, r *http.Request) {
 			a.Notes = p.Notes
 			a.RotateURL = p.RotateURL
 			a.Tags = p.Tags
+			// Only "secret"/"env" pin the kind; anything else clears the override.
+			if p.OverrideKind == "secret" || p.OverrideKind == "env" {
+				a.OverrideKind = p.OverrideKind
+			} else {
+				a.OverrideKind = ""
+			}
 			// Stale is preserved; only the dedicated endpoint flips it.
 			found = true
 			return true

@@ -106,6 +106,27 @@
   function isIgnored(s) { return ignoredSet.has(s.id); }
   function setIgnored(s, on) { if (on) ignoredSet.add(s.id); else ignoredSet.delete(s.id); persistIgnored(); render(); if (selectedId) renderDrawer(); }
 
+  // ---- Secrets / Environment lens --------------------------------------
+  // The classifier tags each entry secret|env. Secrets is the hero view
+  // (exposure, lock-down, rotation); Environment is the calm full list of
+  // ordinary config (PORT, NODE_ENV, …) so real secrets aren't buried.
+  let lens = localStorage.getItem("rafter.lens") || "secrets";
+  // Effective kind: a user override wins, else the classifier, else "secret"
+  // (old records / fail-safe default).
+  function effectiveKind(s) { return (s.annotation && s.annotation.override_kind) || s.kind || "secret"; }
+  function isEnv(s) { return effectiveKind(s) === "env"; }
+  function lensSecrets() { return state.secrets.filter((s) => lens === "env" ? isEnv(s) : !isEnv(s)); }
+  async function setOverrideKind(s, kind) {
+    const a = s.annotation || {};
+    const ann = { source_url: a.source_url || "", owner: a.owner || "", notes: a.notes || "", rotate_url: a.rotate_url || "", tags: projectsOf(s), override_kind: kind };
+    try {
+      await api(`/api/secrets/${encodeURIComponent(s.id)}/annotation`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ann) });
+      s.annotation = Object.assign({}, a, { override_kind: kind });
+      setToast(kind === "env" ? "Moved to Environment." : kind === "secret" ? "Moved to Secrets." : "Reset to auto.");
+      render(); if (selectedId) renderDrawer();
+    } catch (e) { setToast("Couldn't update: " + e.message, true); }
+  }
+
   // ---- project suggestions ("which repo does this live in?") -----------
   // The scanner doesn't tag a git root, so we infer the project from the
   // path: a *project-local* dotenv (.env / .env.* / .envrc) sits at the
@@ -167,31 +188,62 @@
     clear(content);
     if (state.secrets.length === 0) { content.appendChild(renderEmpty()); content.appendChild(renderFoot()); return; }
 
-    content.appendChild(renderHero());
-    content.appendChild(renderFigures());
+    content.appendChild(renderLensToggle());
+    const pool = lensSecrets();
 
-    const attn = state.secrets.filter(needsAttention);
+    if (lens === "env") {
+      content.appendChild(renderEnvHeader(pool.length));
+      content.appendChild(renderList(pool.slice().sort(byName), false));
+      content.appendChild(renderFoot());
+      if (selectedId && !state.secrets.some((s) => s.id === selectedId)) closeDrawer();
+      return;
+    }
+
+    content.appendChild(renderHero(pool));
+    content.appendChild(renderFigures(pool));
+
+    const attn = pool.filter(needsAttention);
     if (view === "folder") {
       content.appendChild(section("Where your secrets live", null, null));
-      content.appendChild(renderFolder(state.secrets));
+      content.appendChild(renderFolder(pool));
     } else if (view === "project") {
-      renderProjects(state.secrets).forEach((n) => content.appendChild(n));
+      renderProjects(pool).forEach((n) => content.appendChild(n));
     } else {
       if (attn.length) {
         content.appendChild(section("Worth a look", attn.length, "we'd tidy these first"));
         content.appendChild(renderList(attn, true));
       }
-      const rest = state.secrets.filter((s) => !needsAttention(s)).sort(byName);
+      const rest = pool.filter((s) => !needsAttention(s)).sort(byName);
       content.appendChild(section(attn.length ? "Everything else" : "Your secrets", rest.length, null));
       content.appendChild(renderList(rest, false));
     }
     content.appendChild(renderFoot());
     if (selectedId && !state.secrets.some((s) => s.id === selectedId)) closeDrawer();
   }
+  function renderLensToggle() {
+    const nSec = state.secrets.filter((s) => !isEnv(s)).length;
+    const nEnv = state.secrets.filter(isEnv).length;
+    const seg = el("div", { class: "lens" });
+    const mk = (key, label, n) => {
+      const b = el("button", { class: "lensbtn" + (lens === key ? " active" : "") }, [ document.createTextNode(label), el("span", { class: "lenscount", text: String(n) }) ]);
+      b.addEventListener("click", () => { if (lens === key) return; lens = key; localStorage.setItem("rafter.lens", lens); render(); });
+      return b;
+    };
+    seg.appendChild(mk("secrets", "Secrets", nSec));
+    seg.appendChild(mk("env", "Environment", nEnv));
+    return seg;
+  }
+  function renderEnvHeader(n) {
+    return el("div", { class: "hero" }, [
+      el("div", { class: "eyebrow", text: "On this computer" }),
+      el("h1", { class: "statement" }, [ el("span", { class: "num", text: String(n) }), document.createTextNode(" environment value" + (n === 1 ? "" : "s") + " — ordinary config, not secrets.") ]),
+      el("p", { class: "lede", html: "Ports, hostnames, log levels, feature flags — the non-sensitive settings in your <code>.env</code> and shell files. Nothing here is flagged. Spot one that's actually a secret? Open it and tap <b>“This is a secret.”</b>" }),
+    ]);
+  }
   function byName(a, b) { return vendorFor(a.key_name).name.localeCompare(vendorFor(b.key_name).name); }
 
-  function renderHero() {
-    const live = state.secrets.filter((s) => !isStale(s));
+  function renderHero(pool) {
+    const live = (pool || state.secrets).filter((s) => !isStale(s));
     const total = live.length;
     const attn = live.filter(needsAttention).length;
     const stmt = el("h1", { class: "statement" });
@@ -216,8 +268,8 @@
     ]);
   }
 
-  function renderFigures() {
-    const live = state.secrets.filter((s) => !isStale(s));
+  function renderFigures(pool) {
+    const live = (pool || state.secrets).filter((s) => !isStale(s));
     const total = live.length;
     const exposed = live.filter((s) => exposure(s)).length;
     const dup = live.filter(isDuplicated).length;
@@ -298,6 +350,7 @@
   }
 
   function statusPill(s) {
+    if (lens === "env") return pill("muted", "Config");
     if (isStale(s)) return pill("muted", "Not in use");
     if (isIgnored(s) && hasWarnings(s)) return pill("muted", "Warning ignored");
     const ex = exposure(s);
@@ -416,6 +469,14 @@
       el("div", { class: "dtitles" }, [ el("h2", { text: s.key_name }), el("div", { class: "dtype" }, [ el("span", { class: "em", text: v.name }), document.createTextNode(" · " + contextLabel(s).toLowerCase()) ]) ]),
       el("button", { class: "btn ghost sm mclose", onclick: closeDrawer, text: "✕" }),
     ]));
+
+    if (!isManual(s)) {
+      const env = isEnv(s);
+      body.appendChild(el("div", { class: "kindbar" }, [
+        el("span", { class: "kindlabel", text: env ? "Classified as environment / config" : "Classified as a secret" }),
+        el("button", { class: "btn ghost sm", text: env ? "This is a secret →" : "This isn’t a secret →", onclick: () => setOverrideKind(s, env ? "secret" : "env") }),
+      ]));
+    }
 
     const isRev = revealed.has(s.id);
     if (isManual(s)) body.appendChild(el("div", { class: "valuebox" }, [ el("span", { class: "v hidden", text: "added by you — no file value" }) ]));

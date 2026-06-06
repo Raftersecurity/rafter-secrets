@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Raftersecurity/rafter-secrets/internal/classify"
 	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
@@ -147,6 +148,7 @@ func walkOne(
 			Value:   fs.Value,
 			Found:   fs.Source,
 			Now:     now,
+			Kind:    classify.Classify(fs.KeyName, fs.Value, fs.Source.SourceType, fs.Source.Path),
 		})
 		r.SecretsFound++
 		if out.Secret != nil {
