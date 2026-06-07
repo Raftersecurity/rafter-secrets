@@ -741,6 +741,12 @@
         el("button", { class: "btn primary sm", onclick: () => rotateFix(s), text: "Replace the value" }),
         el("span", { class: "hint", text: "updates your file(s) · previewed · undoable" }),
       ]));
+      // Hand off to the user's agent — covers any provider, including ones we
+      // can't test or rotate ourselves. Prompts never contain the value.
+      body.appendChild(el("div", { class: "fact agentrow" }, [
+        agentBtn("Rotate it — prompt for your agent", PROMPT.rotate(s)),
+        agentBtn("Is it still live? — prompt for your agent", PROMPT.testLive(s)),
+      ]));
     }
 
     clear(drawerEl);
@@ -748,18 +754,37 @@
     body.scrollTop = prevScroll;
   }
 
+  // ---- agent hand-off prompts -----------------------------------------
+  // Copy a context-rich, VALUE-FREE prompt the user pastes into their AI agent
+  // for step-by-step help. Includes the key name, vendor, file and problem —
+  // never the secret value. This is how we cover *arbitrary* keys: the agent
+  // has the provider knowledge we can't hard-code.
+  function whereLine(s) { const f = fileLocations(s)[0]; return f && f.path ? prettyPath(f.path) : "(a saved value, no file)"; }
+  function vendorPhrase(s) { const v = vendorLabel(s.key_name); return v ? " (a " + v + " key)" : ""; }
+  function agentBtn(label, prompt) { return el("button", { class: "btn ghost sm agentcopy", title: "Copy a prompt to paste into your AI coding agent — no secret value is included", onclick: (e) => { e.stopPropagation(); copy(prompt, "Prompt copied — paste it into your agent"); } }, [ el("span", { class: "fi", html: ICON.spark }), document.createTextNode(label) ]); }
+  function agentFact(label, prompt) { return el("div", { class: "fact" }, [ agentBtn(label, prompt) ]); }
+  const PROMPT = {
+    rotate: (s) => `My secret ${s.key_name}${vendorPhrase(s)} lives in ${whereLine(s)}. Walk me through rotating it safely, step by step: where to revoke or roll the key with the provider, how to create a replacement, how to update the file, and how to confirm the old one is dead. Give exact commands for my OS. Don't ask me to paste the secret value.`,
+    gitCommitted: (s) => `The secret ${s.key_name}${vendorPhrase(s)} is committed to a git repository (file: ${whereLine(s)}). Help me, step by step: (1) rotate it with the provider — revoke the old key and create a new one; (2) update the file; (3) remove the old value from git history, and explain the force-push and blast-radius implications. Exact commands. Don't ask me to paste the value.`,
+    gitignore: (s) => `The file ${whereLine(s)} holds the secret ${s.key_name} and is inside a git repo but isn't git-ignored. Show me how to add it to .gitignore and verify it isn't already tracked. Exact commands.`,
+    lockdown: (s) => `The file ${whereLine(s)} (holds the secret ${s.key_name}) is readable by other accounts on this computer. Show me how to restrict it to my user only, and explain what that does and doesn't protect against. Exact commands for my OS.`,
+    testLive: (s) => `How can I check whether the API key ${s.key_name}${vendorPhrase(s)} is still active? Give me a safe, read-only way to test it against the provider, and if it's live, how to rotate it. The key is in ${whereLine(s)}. I'll run it myself — don't ask me to paste the value here.`,
+  };
+
   function buildFindings(s) {
     const out = [];
     if (inGitHistory(s)) {
       out.push(el("div", { class: "finding danger" }, [
         el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.warn }), document.createTextNode("This secret is committed to git") ]),
         el("p", { class: "fb", html: "It’s tracked in a git repo, so it may already be in your history — and pushed somewhere public. Locking the file down won’t help once it’s in git: <b>rotate this key</b>, then remove the value from the file." }),
+        agentFact("Copy prompt for your agent", PROMPT.gitCommitted(s)),
       ]));
     }
     if (notGitignored(s)) {
       out.push(el("div", { class: "finding warn" }, [
         el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.warn }), document.createTextNode("Not in .gitignore") ]),
         el("p", { class: "fb", html: "This file is inside a git repo but <b>isn’t git-ignored</b> — one <code>git add</code> away from being committed and pushed. Add it to <code>.gitignore</code> so it can’t be." }),
+        agentFact("Copy prompt for your agent", PROMPT.gitignore(s)),
       ]));
     } else if (gitIgnoredOk(s)) {
       out.push(el("div", { class: "finding ok" }, [
@@ -773,11 +798,11 @@
       // the verbose explanation was cut.)
       out.push(el("div", { class: "finding" }, [
         el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.lock }), document.createTextNode("Readable by other accounts on this computer") ]),
-        el("div", { class: "fact", style: "margin-top:11px" }, [ el("button", { class: "btn primary sm", onclick: () => secureFix(s), text: "Lock it down" }), el("span", { class: "hint", text: "previewed · undoable" }) ]),
+        el("div", { class: "fact", style: "margin-top:11px" }, [ el("button", { class: "btn primary sm", onclick: () => secureFix(s), text: "Lock it down" }), agentBtn("Or ask your agent", PROMPT.lockdown(s)) ]),
       ]));
     }
-    if (isDuplicated(s)) out.push(el("div", { class: "finding warn" }, [ el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.copy }), document.createTextNode("Saved in " + fileLocations(s).length + " files") ]), el("p", { class: "fb", text: "Replace it once and you'll need to update every copy, or the apps using the old ones break." }) ]));
-    if (isExpiringSoon(s)) { const n = daysUntilExpiry(s); out.push(el("div", { class: "finding " + (n < 0 ? "danger" : "warn") }, [ el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.warn }), document.createTextNode(n < 0 ? "This key has expired" : "This key expires soon") ]), el("p", { class: "fb", text: n < 0 ? "It expired " + (-n) + " day" + (n === -1 ? "" : "s") + " ago — replace it and update where it's used." : "Expires in " + n + " day" + (n === 1 ? "" : "s") + ". Plan to replace it before then." }) ])); }
+    if (isDuplicated(s)) out.push(el("div", { class: "finding warn" }, [ el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.copy }), document.createTextNode("Saved in " + fileLocations(s).length + " files") ]), el("p", { class: "fb", text: "Replace it once and you'll need to update every copy, or the apps using the old ones break." }), agentFact("Copy prompt for your agent", PROMPT.rotate(s)) ]));
+    if (isExpiringSoon(s)) { const n = daysUntilExpiry(s); out.push(el("div", { class: "finding " + (n < 0 ? "danger" : "warn") }, [ el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.warn }), document.createTextNode(n < 0 ? "This key has expired" : "This key expires soon") ]), el("p", { class: "fb", text: n < 0 ? "It expired " + (-n) + " day" + (n === -1 ? "" : "s") + " ago — replace it and update where it's used." : "Expires in " + n + " day" + (n === 1 ? "" : "s") + ". Plan to replace it before then." }), agentFact("Copy prompt for your agent", PROMPT.rotate(s)) ])); }
     return out;
   }
 
@@ -975,6 +1000,7 @@
     warn: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 14h13z"/><path d="M8 6.5v3.5" stroke-linecap="round"/><circle cx="8" cy="12" r=".7" fill="currentColor" stroke="none"/></svg>',
     check: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8.5 6.5 12 13 4.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     copy: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="9" rx="1.2"/><path d="M3 11V3a1 1 0 0 1 1-1h6"/></svg>',
+    spark: '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l1.5 4.3L14 7l-4.5 1.7L8 13l-1.5-4.3L2 7l4.5-1.7z"/></svg>',
     chev: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     shield: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5 13 3.5v4c0 3.5-2.2 5.8-5 7-2.8-1.2-5-3.5-5-7v-4z"/></svg>',
     x: '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"/></svg>',
