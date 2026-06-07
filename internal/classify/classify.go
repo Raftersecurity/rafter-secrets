@@ -42,6 +42,13 @@ func Classify(keyName, value, sourceType, path string) string {
 	if looksLikeCredentialValue(v) {
 		return KindSecret
 	}
+	// A filesystem path is a pointer to a file, not a secret value — even under a
+	// secret-ish key (GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json, PATH=…).
+	// The file it points at is scanned on its own. Checked before the key-name
+	// rule so a path-valued "credentials" key isn't mislabelled a secret.
+	if isPathValue(v) {
+		return KindEnv
+	}
 	// Public-by-convention env vars ship to browsers by design.
 	if hasPublicPrefix(keyName) {
 		return KindEnv
@@ -80,7 +87,17 @@ var (
 	rePlainURL   = regexp.MustCompile(`^https?://[^@\s]+$`)
 	reHostPort   = regexp.MustCompile(`^[\w.-]+:\d{2,5}$`)
 	reSecretName = regexp.MustCompile(`(secret|passwd|password|pwd|api[_-]?key|apikey|access[_-]?key|client[_-]?secret|private[_-]?key|priv[_-]?key|auth[_-]?token|oauth[_-]?token|_token$|^token|signing|bearer|credential|encryption[_-]?key|webhook[_-]?secret|session[_-]?secret|dsn$)`)
+	// Absolute, home, relative, Windows-drive paths, or a colon-list of them
+	// (PATH=/usr/bin:/bin). A value with whitespace isn't treated as a path.
+	rePath = regexp.MustCompile(`^(~?/|\.\.?/|[A-Za-z]:[\\/])\S`)
 )
+
+func isPathValue(v string) bool {
+	if v == "" || strings.ContainsAny(v, " \t") {
+		return false
+	}
+	return rePath.MatchString(v)
+}
 
 // credentialPrefixes are vendor key prefixes that are unambiguously secret.
 // Stripe publishable keys (pk_) are deliberately excluded — they're public.

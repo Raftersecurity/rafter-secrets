@@ -46,6 +46,15 @@ func TestClassify(t *testing.T) {
 		{"VITE_APP_TITLE", "My App", "envfile", KindEnv},
 		{"BASE_URL", "https://example.com", "envfile", KindEnv},
 		{"HOST", "localhost", "envfile", KindEnv},
+		// Filesystem paths are pointers to files, not secret values — even when
+		// the key name looks secret-y (the path isn't the secret; the file is).
+		{"GOOGLE_APPLICATION_CREDENTIALS", "/Users/me/keys/gcp.json", "envfile", KindEnv},
+		{"PATH", "/usr/local/bin:/usr/bin:/bin", "shell-rc", KindEnv},
+		{"HOME", "/home/me", "shell-rc", KindEnv},
+		{"SSL_CERT_FILE", "./certs/server.pem", "envfile", KindEnv},
+		{"PRIVATE_KEY_PATH", "~/.ssh/id_rsa", "envfile", KindEnv},
+		// ...but a path-shaped key whose VALUE is an actual credential still wins.
+		{"PRIVATE_KEY", pem, "envfile", KindSecret},
 		// Placeholders (the .env.example case).
 		{"API_KEY", "your-api-key-here", "envfile", KindEnv},
 		{"SECRET_KEY", "changeme", "envfile", KindEnv},

@@ -85,6 +85,9 @@
     [/(secret|token|key|password|passwd|pat|api)/i, "Credential", "Key"],
   ];
   function vendorFor(k) { k = k || ""; for (const [re, n, c] of VENDORS) if (re.test(k)) return { name: n, chip: c }; return { name: "Saved value", chip: (k.slice(0, 2) || "··").toUpperCase() }; }
+  // The recognised vendor (Stripe, OpenAI…), or null for the generic fallbacks —
+  // so we show the real variable name instead of a vague "Credential".
+  function vendorLabel(k) { const n = vendorFor(k).name; return (n === "Credential" || n === "Saved value") ? null : n; }
 
   function parsePerm(p) { if (!p) return null; const m = /(\d{3,4})$/.exec(p); if (!m) return null; const o = m[1].slice(-3); return { group: (parseInt(o[1], 8) & 4) !== 0, other: (parseInt(o[2], 8) & 4) !== 0 }; }
   function isManual(s) { return typeof s.id === "string" && s.id.indexOf("manual:") === 0; }
@@ -340,8 +343,14 @@
     const row = el("div", { class: cls });
     row.appendChild(el("div", { class: "tile", text: v.chip }));
 
-    const sub = el("div", { class: "rsub" }, [ el("span", { text: contextLabel(s) }), el("span", { class: "sdot" }), el("code", { text: s.key_name }) ]);
-    row.appendChild(el("div", { class: "rbody" }, [ el("div", { class: "rname", text: v.name }), sub ]));
+    // Title is the variable name itself (OPENAI_API_KEY) — what the user
+    // recognises. Subtext is the vendor (if known) then where it lives.
+    const vl = vendorLabel(s.key_name);
+    const subKids = [];
+    if (vl) { subKids.push(el("span", { text: vl }), el("span", { class: "sdot" })); }
+    subKids.push(el("span", { text: contextLabel(s) }));
+    const sub = el("div", { class: "rsub" }, subKids);
+    row.appendChild(el("div", { class: "rbody" }, [ el("code", { class: "rname", text: s.key_name }), sub ]));
 
     const rright = el("div", { class: "rright" });
     if (flagged) rright.appendChild(el("button", { class: "btn ghost sm rowig", title: "Ignore this — move it out of “Worth a look”", onclick: (e) => { e.stopPropagation(); setIgnored(s, true); setToast("Warning ignored — it’s under “Everything else” now."); } }, [ document.createTextNode("Ignore") ]));
@@ -677,7 +686,7 @@
 
     body.appendChild(el("div", { class: "dhead" }, [
       el("div", { class: "tile", text: v.chip }),
-      el("div", { class: "dtitles" }, [ el("h2", { text: s.key_name }), el("div", { class: "dtype" }, [ el("span", { class: "em", text: v.name }), document.createTextNode(" · " + contextLabel(s).toLowerCase()) ]) ]),
+      el("div", { class: "dtitles" }, [ el("h2", { text: s.key_name }), el("div", { class: "dtype" }, vendorLabel(s.key_name) ? [ el("span", { class: "em", text: vendorLabel(s.key_name) }), document.createTextNode(" · " + contextLabel(s).toLowerCase()) ] : [ document.createTextNode(contextLabel(s).toLowerCase()) ]) ]),
       el("button", { class: "btn ghost sm mclose", onclick: closeDrawer, text: "✕" }),
     ]));
 
