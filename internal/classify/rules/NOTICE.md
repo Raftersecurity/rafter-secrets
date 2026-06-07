@@ -31,3 +31,17 @@ python3 scripts/distill-betterleaks.py /tmp/betterleaks.toml \
 ```
 
 Then bump the pinned commit above. All 279 emitted regexes compile under Go RE2.
+
+## Expected: secret scanners will "flag" this file
+
+This file is a pack of secret-shaped regexes, so any secret scanner — including
+rafter/betterleaks itself — will self-match patterns in it (e.g. an
+`aws-amazon-bedrock` HIGH on the bedrock rule's own literal). That's a **false
+positive on vendored rule data**, not a leaked credential.
+
+Note: rafter-secrets (this product) does **not** scan this file — its dispatcher
+only reads specific named files (`.env*`, `.npmrc`, `.aws/credentials`, …), and a
+generic `.json` is never opened. The self-flag only happens with general
+text scanners (`rafter secrets`, gitleaks, etc.). For CI, scan changed files
+(`--diff`/`--staged`) so the unchanged pack doesn't re-flag, or treat this path
+as a known allowlisted false positive.
