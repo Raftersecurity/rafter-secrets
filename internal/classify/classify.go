@@ -3,11 +3,14 @@
 // mostly noise" problem: scanners emit every key=value pair, but PORT=3000 and
 // LOG_LEVEL=debug aren't secrets and burying the real ones helps no one.
 //
-// The cascade is: source → value shape → key name → value triviality →
-// entropy, and ambiguous defaults to **secret** (fail safe — a missed real
-// secret is far worse than a config line shown in the Secrets list, and the
-// user can demote it in one click). The result is derived, recomputed on every
-// scan; it isn't user data.
+// The positive "this is a credential" signal is generic value shapes (PEM, JWT,
+// URL-with-creds, Slack) plus the vendored betterleaks detection ruleset
+// (ruleset.go). The cascade is: source → placeholder → credential value → path
+// → public prefix → secret-y key name → trivial value → default. Ambiguous now
+// defaults to **env**: we no longer guess "secret" from raw entropy (it
+// mis-flagged UUIDs, hashes and build IDs); the ruleset is the positive signal,
+// and a missed unlabelled token is one click to promote. The result is derived,
+// recomputed on every scan; it isn't user data.
 package classify
 
 import (
@@ -38,8 +41,9 @@ func Classify(keyName, value, sourceType, path string) string {
 	}
 	// A recognisable credential value is the strongest signal — even under a
 	// "public" key name (a real key mistakenly in NEXT_PUBLIC_* is a *worse*
-	// problem, so we want it in Secrets).
-	if looksLikeCredentialValue(v) {
+	// problem, so we want it in Secrets). Generic shapes + the vendored
+	// betterleaks ruleset.
+	if looksLikeCredentialValue(keyName, v) {
 		return KindSecret
 	}
 	// A filesystem path is a pointer to a file, not a secret value — even under a
@@ -66,13 +70,11 @@ func Classify(keyName, value, sourceType, path string) string {
 	if isBenignValue(v) {
 		return KindEnv
 	}
-	// A long high-entropy value under an otherwise-neutral key is probably a
-	// token (FOO=9f2c1ae7b3…).
-	if highEntropy(v) {
-		return KindSecret
-	}
-	// Ambiguous → fail safe.
-	return KindSecret
+	// No known-credential shape and no secret-y key name → treat as config. We
+	// no longer guess "secret" from raw entropy (it flagged UUIDs, hashes, build
+	// IDs); the vendored ruleset is the positive signal now, so the ambiguous
+	// default is env. A missed unlabelled token is one click to promote.
+	return KindEnv
 }
 
 var (
@@ -99,32 +101,15 @@ func isPathValue(v string) bool {
 	return rePath.MatchString(v)
 }
 
-// credentialPrefixes are vendor key prefixes that are unambiguously secret.
-// Stripe publishable keys (pk_) are deliberately excluded — they're public.
-var credentialPrefixes = []string{
-	"sk_live_", "sk_test_", "rk_live_", "rk_test_", // Stripe secret/restricted
-	"sk-ant-", "sk-proj-", "sk-", // Anthropic / OpenAI
-	"akia", "asia", // AWS access key ids (case-insensitive below)
-	"aiza",                                        // Google
-	"ghp_", "gho_", "ghs_", "ghu_", "github_pat_", // GitHub
-	"glpat-",           // GitLab
-	"shppa_", "shpat_", // Shopify
-	"sg.",            // SendGrid
-	"xoxb-", "xoxp-", // Slack (also reSlack)
-	"dop_v1_", // Doppler
-}
-
-func looksLikeCredentialValue(v string) bool {
+// looksLikeCredentialValue is the positive "this value is a credential" signal:
+// cheap generic shapes (PEM / JWT / URL-with-creds / Slack) first, then the
+// vendored betterleaks ruleset (matchesRuleset, ruleset.go) — which subsumes the
+// old hand-rolled vendor-prefix list with far broader, tuned coverage.
+func looksLikeCredentialValue(keyName, v string) bool {
 	if rePEM.MatchString(v) || reJWT.MatchString(v) || reURLCreds.MatchString(v) || reSlack.MatchString(v) {
 		return true
 	}
-	lv := strings.ToLower(v)
-	for _, p := range credentialPrefixes {
-		if strings.HasPrefix(lv, p) {
-			return true
-		}
-	}
-	return false
+	return matchesRuleset(keyName, v)
 }
 
 var publicPrefixes = []string{
@@ -189,19 +174,8 @@ func isPlaceholder(v string) bool {
 	return false
 }
 
-// highEntropy reports whether v is long and random-looking enough to be a
-// token. Sentences and slugs fall below the threshold; random base62/hex
-// strings clear it.
-func highEntropy(v string) bool {
-	if len(v) < 24 {
-		return false
-	}
-	if strings.ContainsAny(v, " \t") {
-		return false // prose, not a token
-	}
-	return shannon(v) >= 3.5
-}
-
+// shannon is the per-byte Shannon entropy of s, used to clear a rule's entropy
+// floor (ruleset.go) so low-entropy lookalikes don't match a credential regex.
 func shannon(s string) float64 {
 	if s == "" {
 		return 0

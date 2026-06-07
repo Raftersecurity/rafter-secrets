@@ -7,9 +7,17 @@ import (
 
 // Credential-shaped test inputs are assembled at runtime (prefix + filler) so
 // no full provider-token literal ever sits in the source — that keeps fake
-// fixtures from tripping GitHub's secret-scanning push protection while still
-// exercising the classifier's prefix/shape rules.
-func tok(prefix string, n int) string { return prefix + strings.Repeat("a", n) }
+// fixtures from tripping GitHub's secret-scanning push protection. The filler is
+// varied base62 (not repeated chars) so it clears the ruleset's entropy floors,
+// the way a real high-entropy token would.
+func tok(prefix string, n int) string {
+	const cs = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = cs[(i*37+11)%len(cs)]
+	}
+	return prefix + string(b)
+}
 
 func TestClassify(t *testing.T) {
 	jwt := "ey" + "J0eXAi" + "." + strings.Repeat("a", 12) + "." + strings.Repeat("b", 12)
@@ -32,8 +40,12 @@ func TestClassify(t *testing.T) {
 		{"WEBHOOK_SECRET", "whatever123", "envfile", KindSecret},
 		// Keystore is always a secret.
 		{"login", "anything", "keystore", KindSecret},
-		// High-entropy token under a neutral key.
-		{"FOO", "9f2c1ae7b3d84c0fa1e6b27c5d9038af", "envfile", KindSecret},
+		// A high-entropy blob under a NEUTRAL key (no vendor shape, no secret-y
+		// name) is now config, not a secret — we don't entropy-guess anymore
+		// (this is the false-positive fix: UUIDs / hashes / build IDs).
+		{"FOO", "9f2c1ae7b3d84c0fa1e6b27c5d9038af", "envfile", KindEnv},
+		// A GitHub PAT is caught by the vendored ruleset.
+		{"GH_TOKEN", tok("ghp_", 36), "envfile", KindSecret},
 		// A real key mistakenly under a PUBLIC prefix is still a secret.
 		{"NEXT_PUBLIC_STRIPE", tok("sk_live_", 24), "envfile", KindSecret},
 
