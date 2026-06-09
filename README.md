@@ -19,6 +19,22 @@ computer.
 
 ---
 
+## Get it running
+
+One line — it auto-detects your OS and CPU, downloads the right binary, verifies
+its checksum, and puts it on your PATH:
+
+```bash
+curl -fsSL https://raftersecurity.github.io/rafter-secrets/install.sh | sh
+rafter-secrets
+```
+
+That opens a local web app in your browser. No account, no telemetry — nothing
+ever leaves your machine. (Homebrew tap coming soon. Prefer to pick the binary
+yourself? See [Install manually](#install-manually).)
+
+---
+
 ## Why
 
 A plaintext secret on disk is readable by **everything that runs as you** — every
@@ -37,7 +53,10 @@ Rafter Secrets is the inventory and hygiene tool for that problem:
 - **Trust it.** A single local binary. No account, no network calls, no telemetry.
   Your secrets never leave the machine.
 
-## Install
+## Install manually
+
+Most people should use the one-line installer under
+[Get it running](#get-it-running). If you'd rather pick the binary yourself:
 
 **Prebuilt binary — no toolchain needed.** Download the asset for your OS/arch
 from the [latest release](https://github.com/Raftersecurity/rafter-secrets/releases/latest)
