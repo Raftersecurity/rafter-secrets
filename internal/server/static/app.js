@@ -25,6 +25,7 @@
   let collapsedGroups = (() => { try { return new Set(JSON.parse(localStorage.getItem("rafter.collapsed") || "[]")); } catch (_) { return new Set(); } })();
   function persistCollapsed() { try { localStorage.setItem("rafter.collapsed", JSON.stringify(Array.from(collapsedGroups))); } catch (_) {} }
   const revealed = new Map();
+  const revealing = new Set(); // ids whose value is being read from disk right now
   let saveTimer = null, saveState = "idle";
 
   // ---- helpers ---------------------------------------------------------
@@ -96,17 +97,23 @@
   function isDuplicated(s) { return fileLocations(s).length > 1; }
   function isStale(s) { return !!(s.annotation && s.annotation.stale); }
   function projectsOf(s) { return (s.annotation && s.annotation.tags) || []; }
-  function inGitHistory(s) { return fileLocations(s).some((f) => f.appears_in_git_history === true); }
+  // A template/example env file (.env.example, .env.sample, …) is committed on
+  // purpose, so its git signals aren't leaks — don't warn on them. (Mirrors the
+  // classifier, which already demotes these out of Secrets.)
+  function isExampleFile(s) { return fileLocations(s).some((f) => /example|sample|template|\.dist|\.tmpl|\.tpl/.test(((f.path || "").split("/").pop() || "").toLowerCase())); }
+  function inGitHistory(s) { return !isExampleFile(s) && fileLocations(s).some((f) => f.appears_in_git_history === true); }
   // In a repo, not committed, and explicitly not ignored → one `git add` from
   // being committed and pushed. (in_gitignore === false means we checked; nil
   // is omitted and means unknown.)
-  function notGitignored(s) { return fileLocations(s).some((f) => f.in_git_repo === true && f.appears_in_git_history !== true && f.in_gitignore === false); }
+  function notGitignored(s) { return !isExampleFile(s) && fileLocations(s).some((f) => f.in_git_repo === true && f.appears_in_git_history !== true && f.in_gitignore === false); }
   function gitIgnoredOk(s) { return !inGitHistory(s) && fileLocations(s).some((f) => f.in_gitignore === true); }
   // Note: file permissions ("exposed") deliberately do NOT flag a secret as
   // "worth a look" — chmod only stops other accounts, which is marginal. The
   // one permissions surface left is the calm Lock-down banner + the per-secret
   // button. Real risk = leak vectors (git) + lifecycle.
-  function hasWarnings(s) { return !isStale(s) && (inGitHistory(s) || notGitignored(s) || isDuplicated(s) || isExpiringSoon(s)); }
+  // Duplication is a note, not a risk — it no longer pulls an item into "Worth a
+  // look" (it shows as informational in the drawer instead).
+  function hasWarnings(s) { return !isStale(s) && (inGitHistory(s) || notGitignored(s) || isExpiringSoon(s)); }
   function needsAttention(s) { return hasWarnings(s) && !isIgnored(s); }
 
   // ---- ignored warnings (UI-local) -------------------------------------
@@ -128,11 +135,15 @@
   // (exposure, lock-down, rotation); Environment is the calm full list of
   // ordinary config (PORT, NODE_ENV, …) so real secrets aren't buried.
   let lens = localStorage.getItem("rafter.lens") || "secrets";
+  let showAllEnv = false; // Environment "show all variables" escape hatch
   // Effective kind: a user override wins, else the classifier, else "secret"
   // (old records / fail-safe default).
   function effectiveKind(s) { return (s.annotation && s.annotation.override_kind) || s.kind || "secret"; }
   function isEnv(s) { return effectiveKind(s) === "env"; }
-  function lensSecrets() { return state.secrets.filter((s) => lens === "env" ? isEnv(s) : !isEnv(s)); }
+  // The two lenses are a disjoint partition (each item in exactly one). The
+  // Environment side has an escape hatch to show ALL variables, so a user can
+  // double-check the classifier didn't mis-sort one.
+  function lensSecrets() { if (lens === "env" && showAllEnv) return state.secrets.slice(); return state.secrets.filter((s) => lens === "env" ? isEnv(s) : !isEnv(s)); }
   // annotationBody builds the FULL annotation. The server does a full replace,
   // so every writer must send all fields or it would wipe the others.
   function annotationBody(s, over) {
@@ -221,6 +232,10 @@
 
     if (lens === "env") {
       content.appendChild(renderEnvHeader(pool.length));
+      const allN = state.secrets.length, envN = state.secrets.filter(isEnv).length;
+      content.appendChild(el("div", { class: "envtoggle" }, [
+        el("button", { class: "btn ghost sm" + (showAllEnv ? " active" : ""), onclick: () => { showAllEnv = !showAllEnv; render(); }, text: showAllEnv ? "Showing all " + allN + " variables — back to config only (" + envN + ")" : "Show all " + allN + " variables (incl. secrets) — double-check the sort" }),
+      ]));
       content.appendChild(renderList(pool.slice().sort(byName), false));
       content.appendChild(renderFoot());
       if (selectedId && !state.secrets.some((s) => s.id === selectedId)) closeDrawer();
@@ -444,8 +459,10 @@
   // ---- reveal ----------------------------------------------------------
   async function toggleReveal(s) {
     if (revealed.has(s.id)) { revealed.delete(s.id); renderDrawer(); return; }
-    try { const b = await api(`/api/secrets/${encodeURIComponent(s.id)}/reveal`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); revealed.set(s.id, b.value); renderDrawer(); }
+    revealing.add(s.id); renderDrawer(); // show "Reading…" — disk read can lag on big inventories
+    try { const b = await api(`/api/secrets/${encodeURIComponent(s.id)}/reveal`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); revealed.set(s.id, b.value); }
     catch (e) { if (e.status === 422) setToast("No live value to show for this one.", true); else if (e.status === 410) setToast("That value just changed — refreshing.", true); else setToast("Couldn't read it: " + e.message, true); }
+    finally { revealing.delete(s.id); renderDrawer(); }
   }
 
   // ---- in-app fixes (preview → confirm → apply → undo) -----------------
@@ -704,6 +721,10 @@
       el("span", { class: "v hidden", text: "••••••••••••" }),
       el("span", { class: "hint", text: "showing values is turned off (--no-reveal)" }),
     ]));
+    else if (revealing.has(s.id)) body.appendChild(el("div", { class: "valuebox" }, [
+      el("span", { class: "v hidden", text: "••••••••••••" }),
+      el("button", { class: "btn sm", disabled: "disabled" }, [ el("span", { class: "spin" }), document.createTextNode("Reading…") ]),
+    ]));
     else body.appendChild(el("div", { class: "valuebox" }, [
       el("span", { class: "v " + (isRev ? "revealed" : "hidden"), text: isRev ? revealed.get(s.id) : "••••••••••••" }),
       isRev ? el("button", { class: "btn sm", onclick: () => copy(revealed.get(s.id), "Copied"), text: "Copy" }) : null,
@@ -761,7 +782,7 @@
   // has the provider knowledge we can't hard-code.
   function whereLine(s) { const f = fileLocations(s)[0]; return f && f.path ? prettyPath(f.path) : "(a saved value, no file)"; }
   function vendorPhrase(s) { const v = vendorLabel(s.key_name); return v ? " (a " + v + " key)" : ""; }
-  function agentBtn(label, prompt) { return el("button", { class: "btn ghost sm agentcopy", title: "Copy a prompt to paste into your AI coding agent — no secret value is included", onclick: (e) => { e.stopPropagation(); copy(prompt, "Prompt copied — paste it into your agent"); } }, [ el("span", { class: "fi", html: ICON.spark }), document.createTextNode(label) ]); }
+  function agentBtn(label, prompt) { return el("button", { class: "btn ghost sm agentcopy", title: "Copy a prompt to paste into your AI coding agent — no secret value is included", onclick: (e) => { e.stopPropagation(); copy(prompt, "Prompt copied — paste it into your agent"); } }, [ el("span", { class: "fi", html: ICON.copy }), document.createTextNode(label) ]); }
   function agentFact(label, prompt) { return el("div", { class: "fact" }, [ agentBtn(label, prompt) ]); }
   const PROMPT = {
     rotate: (s) => `My secret ${s.key_name}${vendorPhrase(s)} lives in ${whereLine(s)}. Walk me through rotating it safely, step by step: where to revoke or roll the key with the provider, how to create a replacement, how to update the file, and how to confirm the old one is dead. Give exact commands for my OS. Don't ask me to paste the secret value.`,
@@ -801,7 +822,7 @@
         el("div", { class: "fact", style: "margin-top:11px" }, [ el("button", { class: "btn primary sm", onclick: () => secureFix(s), text: "Lock it down" }), agentBtn("Or ask your agent", PROMPT.lockdown(s)) ]),
       ]));
     }
-    if (isDuplicated(s)) out.push(el("div", { class: "finding warn" }, [ el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.copy }), document.createTextNode("Saved in " + fileLocations(s).length + " files") ]), el("p", { class: "fb", text: "Replace it once and you'll need to update every copy, or the apps using the old ones break." }), agentFact("Copy prompt for your agent", PROMPT.rotate(s)) ]));
+    if (isDuplicated(s)) out.push(el("div", { class: "finding" }, [ el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.copy }), document.createTextNode("Saved in " + fileLocations(s).length + " files") ]), el("p", { class: "fb", text: "Just so you know — if you ever replace it, update every copy or the apps still on the old one break. See them all under “Where it’s stored”." }) ]));
     if (isExpiringSoon(s)) { const n = daysUntilExpiry(s); out.push(el("div", { class: "finding " + (n < 0 ? "danger" : "warn") }, [ el("div", { class: "fh" }, [ el("span", { class: "fi", html: ICON.warn }), document.createTextNode(n < 0 ? "This key has expired" : "This key expires soon") ]), el("p", { class: "fb", text: n < 0 ? "It expired " + (-n) + " day" + (n === -1 ? "" : "s") + " ago — replace it and update where it's used." : "Expires in " + n + " day" + (n === 1 ? "" : "s") + ". Plan to replace it before then." }), agentFact("Copy prompt for your agent", PROMPT.rotate(s)) ])); }
     return out;
   }

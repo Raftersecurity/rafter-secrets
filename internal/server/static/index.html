@@ -225,6 +225,11 @@
   .fact.agentrow { margin-top: 8px; }
   .agentcopy { display: inline-flex; align-items: center; gap: 6px; }
   .agentcopy .fi { display: inline-flex; opacity: .7; }
+  .btn[disabled] { opacity: .6; cursor: default; }
+  .envtoggle { margin: 4px 0 14px; }
+  .valuebox .btn { display: inline-flex; align-items: center; }
+  .spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--line-2); border-top-color: var(--text); border-radius: 50%; animation: spin .7s linear infinite; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .finding .fact { margin-top: 12px; }
   .locs li { gap: 11px; } .locs .li-open { flex-shrink: 0; margin-left: auto; }
   .finding.danger { border-color: var(--red-line); background: var(--red-bg); } .finding.danger .fh { color: var(--red); }
