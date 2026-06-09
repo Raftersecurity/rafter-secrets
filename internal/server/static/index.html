@@ -82,12 +82,23 @@
   .statement { font-size: 37px; line-height: 1.22; font-weight: 400; letter-spacing: -0.022em; max-width: 22ch; margin: 0; color: var(--muted); }
   .statement .grad, .statement .num, .statement b { font-weight: 500; color: var(--text); font-variant-numeric: tabular-nums; }
   .statement .grad { font-weight: 560; }
+  /* hero owns the one number; everything else is smaller context */
+  .herobig { display: flex; align-items: center; gap: 22px; margin-top: 8px; }
+  .herobig .bignum { font-size: 76px; line-height: .85; font-weight: 600; letter-spacing: -0.045em; font-variant-numeric: tabular-nums; color: var(--amber); }
+  .herobig .bignum.ok { color: var(--green); }
+  .herobig .herotext .bigh { font-size: 22px; font-weight: 500; letter-spacing: -0.02em; margin: 0; color: var(--text); }
+  .herobig .herotext .bigsub { color: var(--muted); font-size: 13.5px; margin-top: 5px; }
+  .heroact { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+  .heroact .hint { color: var(--muted); font-size: 12.5px; }
+  .primact { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 15px 0 2px; }
+  .primact .hint { color: var(--muted); font-size: 12.5px; }
+  @media (max-width: 620px) { .herobig .bignum { font-size: 58px; } }
   .lede { color: var(--muted); font-size: 15px; line-height: 1.6; max-width: 60ch; margin: 20px 0 0; }
   .lede b { color: var(--dim); font-weight: 550; }
 
   /* figures */
-  .figures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 34px; }
-  .figure { padding: 17px 18px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); box-shadow: var(--shadow-card); display: flex; flex-direction: column; }
+  .figures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 26px; }
+  .figure { padding: 13px 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); display: flex; flex-direction: column; }
   .figure .ftop { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
   .figure .flbl { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; white-space: nowrap; }
   .figure .fbadge { font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
@@ -95,8 +106,8 @@
   .figure .fbadge.warn { color: var(--amber); background: var(--amber-bg); }
   .figure .fbadge.bad { color: var(--red); background: var(--red-bg); }
   .figure .fbadge.info { color: var(--blue); background: var(--blue-bg); }
-  .figure .fnum { font-size: 38px; font-weight: 600; letter-spacing: -0.035em; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
-  .figure .fbar { height: 6px; border-radius: 4px; background: var(--surface-h); margin-top: 15px; overflow: hidden; }
+  .figure .fnum { font-size: 26px; font-weight: 600; letter-spacing: -0.03em; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; margin-top: 7px; }
+  .figure .fbar { height: 5px; border-radius: 4px; background: var(--surface-h); margin-top: 11px; overflow: hidden; }
   .figure .fbar i { display: block; height: 100%; border-radius: 4px; }
   .figure .fbar i.ink { background: var(--text); opacity: 0.78; }
   .figure .fbar i.green { background: var(--green); } .figure .fbar i.amber { background: var(--amber); }

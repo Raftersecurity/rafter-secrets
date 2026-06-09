@@ -242,11 +242,8 @@
       return;
     }
 
-    content.appendChild(renderHero(pool));
+    content.appendChild(renderHero(pool)); // the lock-all action now lives in the hero
     content.appendChild(renderFigures(pool));
-
-    const exposedN = pool.filter((s) => !isStale(s) && exposure(s)).length;
-    if (exposedN > 0) content.appendChild(renderLockAllBanner(exposedN));
 
     const attn = pool.filter(needsAttention);
     if (view === "folder") {
@@ -291,26 +288,34 @@
     const live = (pool || state.secrets).filter((s) => !isStale(s));
     const total = live.length;
     const attn = live.filter(needsAttention).length;
-    const stmt = el("h1", { class: "statement" });
+    const exposedN = live.filter((s) => exposure(s)).length;
+
+    // The risk count is the one big number; everything else is smaller context.
+    const big = el("div", { class: "herobig " + (attn > 0 ? "risk" : "calm") });
     if (attn > 0) {
-      stmt.appendChild(el("span", { class: "grad", text: cap(spell(attn)) }));
-      stmt.appendChild(document.createTextNode(" of your "));
-      stmt.appendChild(el("span", { class: "num", text: String(total) }));
-      stmt.appendChild(document.createTextNode(" saved secrets " + (attn === 1 ? "is " : "are ")));
-      stmt.appendChild(el("b", { text: "worth a look" }));
-      stmt.appendChild(document.createTextNode("."));
+      big.appendChild(el("div", { class: "bignum", text: String(attn) }));
+      big.appendChild(el("div", { class: "herotext" }, [
+        el("h1", { class: "bigh", text: (attn === 1 ? "secret worth a look" : "secrets worth a look") }),
+        el("div", { class: "bigsub", text: "of " + total + " you're tracking — the rest look fine." }),
+      ]));
     } else {
-      stmt.appendChild(document.createTextNode("All "));
-      stmt.appendChild(el("span", { class: "num", text: String(total) }));
-      stmt.appendChild(document.createTextNode(" of your saved secrets "));
-      stmt.appendChild(el("b", { text: "look tidy" }));
-      stmt.appendChild(document.createTextNode("."));
+      big.appendChild(el("div", { class: "bignum ok", text: String(total) }));
+      big.appendChild(el("div", { class: "herotext" }, [
+        el("h1", { class: "bigh", text: (total === 1 ? "secret, all tidy" : "secrets, all tidy") }),
+        el("div", { class: "bigsub", text: "nothing committed to git, nothing flagged." }),
+      ]));
     }
-    return el("div", { class: "hero" }, [
-      el("div", { class: "eyebrow", text: "On this computer" }),
-      stmt,
-      el("p", { class: "lede", html: "Passwords, keys, and tokens sitting in plain files — readable by anything you run, <b>including AI coding agents</b>. Nothing here is changed, moved, or uploaded." }),
-    ]);
+
+    const hero = el("div", { class: "hero" }, [ el("div", { class: "eyebrow", text: "On this computer" }), big ]);
+    // One primary action, attached to the hero (not a floating card).
+    if (exposedN > 0) {
+      hero.appendChild(el("div", { class: "heroact" }, [
+        el("button", { class: "btn primary", onclick: secureAllFix, text: "Lock down " + exposedN + " readable file" + (exposedN === 1 ? "" : "s") }),
+        el("span", { class: "hint", text: "make them private to you — previewed first, undoable" }),
+      ]));
+    }
+    hero.appendChild(el("p", { class: "lede", html: "Passwords, keys, and tokens sitting in plain files — readable by anything you run, <b>including AI coding agents</b>. Nothing here is changed, moved, or uploaded." }));
+    return hero;
   }
 
   function renderFigures(pool) {
@@ -367,9 +372,9 @@
     const sub = el("div", { class: "rsub" }, subKids);
     row.appendChild(el("div", { class: "rbody" }, [ el("code", { class: "rname", text: s.key_name }), sub ]));
 
+    // Status pill is the main right-side element; the masked-dots glyph is gone
+    // (the pill already says what it is) and Ignore moved into the drawer.
     const rright = el("div", { class: "rright" });
-    if (flagged) rright.appendChild(el("button", { class: "btn ghost sm rowig", title: "Ignore this — move it out of “Worth a look”", onclick: (e) => { e.stopPropagation(); setIgnored(s, true); setToast("Warning ignored — it’s under “Everything else” now."); } }, [ document.createTextNode("Ignore") ]));
-    rright.appendChild(el("span", { class: "dots", text: "••••••" }));
     rright.appendChild(statusPill(s));
     rright.appendChild(el("span", { class: "chev", html: ICON.chev }));
     row.appendChild(rright);
@@ -403,7 +408,7 @@
     if (isIgnored(s) && hasWarnings(s)) return pill("muted", "Warning ignored");
     if (inGitHistory(s)) return pill("danger", "Committed to git");
     if (notGitignored(s)) return pill("warn", "Not git-ignored");
-    if (isDuplicated(s)) return pill("info", "Saved in " + fileLocations(s).length + " places");
+    if (isDuplicated(s)) return pill("muted", "Saved in " + fileLocations(s).length + " places");
     if (isExpiringSoon(s)) { const n = daysUntilExpiry(s); return pill(n < 0 ? "danger" : "warn", n < 0 ? "Expired" : n === 0 ? "Expires today" : "Expires in " + n + "d"); }
     if (isManual(s)) return pill("manual", "You're tracking this");
     return pill("muted", "Tracked");
@@ -707,6 +712,11 @@
       el("button", { class: "btn ghost sm mclose", onclick: closeDrawer, text: "✕" }),
     ]));
 
+    // One recommended next action, right under the title. The full set still
+    // lives in the finding cards + "Replacing this key" below.
+    const primary = primaryAction(s);
+    if (primary) body.appendChild(primary);
+
     if (!isManual(s)) {
       const env = isEnv(s);
       body.appendChild(el("div", { class: "kindbar" }, [
@@ -791,6 +801,16 @@
     lockdown: (s) => `The file ${whereLine(s)} (holds the secret ${s.key_name}) is readable by other accounts on this computer. Show me how to restrict it to my user only, and explain what that does and doesn't protect against. Exact commands for my OS.`,
     testLive: (s) => `How can I check whether the API key ${s.key_name}${vendorPhrase(s)} is still active? Give me a safe, read-only way to test it against the provider, and if it's live, how to rotate it. The key is in ${whereLine(s)}. I'll run it myself — don't ask me to paste the value here.`,
   };
+
+  // primaryAction is the single most-important next step for a secret, surfaced
+  // right under the drawer title. Order = worst first.
+  function primaryAction(s) {
+    if (isManual(s) || !fileLocations(s).length) return null;
+    if (inGitHistory(s)) return el("div", { class: "primact" }, [ el("button", { class: "btn primary sm", onclick: () => rotateFix(s), text: "Replace the value" }), agentBtn("Rotate it — prompt for your agent", PROMPT.rotate(s)) ]);
+    if (exposure(s)) return el("div", { class: "primact" }, [ el("button", { class: "btn primary sm", onclick: () => secureFix(s), text: "Lock it down" }), el("span", { class: "hint", text: "make it private to you · undoable" }) ]);
+    if (notGitignored(s)) return el("div", { class: "primact" }, [ agentBtn("Add it to .gitignore — prompt for your agent", PROMPT.gitignore(s)) ]);
+    return null;
+  }
 
   function buildFindings(s) {
     const out = [];
