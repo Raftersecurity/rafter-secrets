@@ -70,10 +70,13 @@ func Run(ctx context.Context, doc *storage.Global, cfg storage.ScanConfig) (*Res
 	if doc == nil {
 		return nil, errors.New("scan: nil doc")
 	}
-	r := &Result{git: newGitInfo()}
+	r := &Result{}
 	excludes := compileExcludes(cfg.Excludes)
 
 	roots := canonicalRoots(cfg.Roots, r)
+	// gitInfo bounds its upward .git walk to these roots (a .git above the scan
+	// root isn't the user's project repo).
+	r.git = newGitInfo(roots)
 	if len(roots) == 0 {
 		return r, nil
 	}

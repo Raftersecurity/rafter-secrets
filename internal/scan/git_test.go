@@ -40,8 +40,23 @@ func TestGitInfo_TrackedVsUntracked(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "ignored.env"), []byte("K=v\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Under-claim guard (the dangerous one): committed, then removed → still in
+	// history, even though it's no longer tracked / present.
+	if err := os.WriteFile(filepath.Join(root, "deleted.env"), []byte("K=v\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "deleted.env")
+	git("commit", "-m", "add deleted.env")
+	git("rm", "deleted.env")
+	git("commit", "-m", "remove deleted.env")
+	// Over-claim guard: staged but NEVER committed → not in history. Staged LAST
+	// so no later commit sweeps it into the index.
+	if err := os.WriteFile(filepath.Join(root, "staged.env"), []byte("K=v\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "staged.env")
 
-	gi := newGitInfo()
+	gi := newGitInfo([]string{root})
 	check := func(name string, wantIn, wantCommitted, wantIgnored bool) {
 		in, c, ig := gi.status(filepath.Join(root, name))
 		if in != wantIn || c != wantCommitted {
@@ -51,9 +66,11 @@ func TestGitInfo_TrackedVsUntracked(t *testing.T) {
 			t.Errorf("%s: ignored=%v, want %v", name, ig, wantIgnored)
 		}
 	}
-	check("committed.env", true, true, false)  // tracked, not ignored
-	check("untracked.env", true, false, false) // in repo, not committed, NOT ignored — the risky case
+	check("committed.env", true, true, false)  // in history, not ignored
+	check("untracked.env", true, false, false) // in repo, never committed, NOT ignored — the risky case
 	check("ignored.env", true, false, true)    // properly ignored — the good case
+	check("staged.env", true, false, false)    // staged but never committed → NOT in history (no over-claim)
+	check("deleted.env", true, true, false)    // committed then removed → STILL in history (no under-claim)
 
 	outside, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {

@@ -8,22 +8,23 @@ import (
 )
 
 // gitInfo answers two read-only questions per scanned file, for the
-// "secret committed to git" leak signal: is it inside a git repo, and is it
-// *tracked* (i.e. committed/staged — so likely in history and maybe pushed)?
+// "secret committed to git" leak signal: is it inside a git repo, and has it
+// ever appeared in that repo's history (on any ref)?
 //
-// It walks up for a .git entry (cached per directory) and runs `git ls-files`
-// once per repo (cached). It never writes to the repo. If the git binary is
-// missing it degrades to in-repo detection only. One gitInfo is created per
-// scan.Run, so it picks up changes between scans.
+// It walks up for a .git entry (cached, bounded to the scan roots) and runs
+// `git log --all -- <path>` once per file (cached). It never writes to the repo.
+// If the git binary is missing it degrades to in-repo detection only. One
+// gitInfo is created per scan.Run, so it picks up changes between scans.
 type gitInfo struct {
-	repoRoots   map[string]string          // dir → repo root ("" = not in a repo)
-	tracked     map[string]map[string]bool // repo root → set of tracked abs paths
-	ignoreCache map[string]bool            // abs path → git-ignored?
-	noGit       bool
+	roots        []string          // scan roots — the upward .git walk stops here
+	repoRoots    map[string]string // dir → repo root ("" = not in a repo)
+	historyCache map[string]bool   // abs path → ever in git history?
+	ignoreCache  map[string]bool   // abs path → git-ignored?
+	noGit        bool
 }
 
-func newGitInfo() *gitInfo {
-	gi := &gitInfo{repoRoots: map[string]string{}, tracked: map[string]map[string]bool{}, ignoreCache: map[string]bool{}}
+func newGitInfo(roots []string) *gitInfo {
+	gi := &gitInfo{roots: roots, repoRoots: map[string]string{}, historyCache: map[string]bool{}, ignoreCache: map[string]bool{}}
 	if _, err := exec.LookPath("git"); err != nil {
 		gi.noGit = true
 	}
@@ -45,9 +46,29 @@ func (g *gitInfo) status(path string) (inRepo, committed bool, ignored *bool) {
 	if g.noGit {
 		return true, false, nil
 	}
-	committed = g.trackedFor(root)[path]
+	committed = g.inHistory(root, path)
 	ig := g.checkIgnore(root, path)
 	return true, committed, &ig
+}
+
+// inHistory reports whether path ever appeared in this repo's history on ANY
+// ref — `git log --all -1 -- <path>` finds a commit. This is true "in history",
+// not merely "currently tracked": it does NOT over-claim a staged-but-never-
+// committed file, and (the dangerous case) it DOES catch a secret that was
+// committed then deleted or git-ignored — still in history, maybe already pushed.
+func (g *gitInfo) inHistory(root, path string) bool {
+	if v, ok := g.historyCache[path]; ok {
+		return v
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		rel = path
+	}
+	// Fixed args, no shell. -1 stops at the first matching commit (existence only).
+	out, _ := exec.Command("git", "-C", root, "log", "--all", "--format=%h", "-1", "--", rel).Output()
+	v := len(bytes.TrimSpace(out)) > 0
+	g.historyCache[path] = v
+	return v
 }
 
 // checkIgnore reports whether git ignores path (respecting .gitignore, nested
@@ -85,6 +106,11 @@ func (g *gitInfo) repoRootFor(dir string) string {
 			}
 			return d
 		}
+		// Don't walk above a scan root — a .git outside the user's project (e.g.
+		// a repo at $HOME) isn't what "committed to git" should mean here.
+		if g.atRoot(d) {
+			break
+		}
 		parent := filepath.Dir(d)
 		if parent == d {
 			break
@@ -97,22 +123,13 @@ func (g *gitInfo) repoRootFor(dir string) string {
 	return ""
 }
 
-func (g *gitInfo) trackedFor(root string) map[string]bool {
-	if set, ok := g.tracked[root]; ok {
-		return set
-	}
-	set := map[string]bool{}
-	g.tracked[root] = set // cache even on failure so we don't re-run
-	// Fixed args, no shell — root is a filesystem path, never shell-interpreted.
-	out, err := exec.Command("git", "-C", root, "ls-files", "-z").Output()
-	if err != nil {
-		return set
-	}
-	for _, rel := range bytes.Split(out, []byte{0}) {
-		if len(rel) == 0 {
-			continue
+// atRoot reports whether d is one of the scan roots (the upward .git walk
+// boundary).
+func (g *gitInfo) atRoot(d string) bool {
+	for _, r := range g.roots {
+		if d == r {
+			return true
 		}
-		set[filepath.Join(root, string(rel))] = true
 	}
-	return set
+	return false
 }
