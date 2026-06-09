@@ -174,6 +174,10 @@ func DefaultExcludes() []string {
 		"**/.next/",
 		"**/.nuxt/",
 		"**/.DS_Store",
+		// Agent / tool caches — not the user's projects; a huge source of
+		// committed .env.example noise (e.g. ~/.codex/.tmp/plugins/**, ~/.hermes).
+		"~/.codex/",
+		"~/.hermes/",
 	}
 }
 

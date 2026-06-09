@@ -15,6 +15,7 @@ package classify
 
 import (
 	"math"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -34,6 +35,13 @@ func Classify(keyName, value, sourceType, path string) string {
 	// The OS keystore only ever holds credentials.
 	if sourceType == "keystore" {
 		return KindSecret
+	}
+	// Example/template files (.env.example, .env.sample, …) are documentation,
+	// committed on purpose and full of placeholders — never a live secret.
+	// Keyed on the FILENAME: the value-based placeholder logic below misses
+	// vendor-prefixed fillers like hf_xxxx… that match a credential rule.
+	if isExampleFile(path) {
+		return KindEnv
 	}
 	// Empty or obvious placeholder (the .env.example case) is not a live secret.
 	if isPlaceholder(v) {
@@ -170,6 +178,31 @@ func isPlaceholder(v string) bool {
 	lv := strings.ToLower(v)
 	if placeholderWords[lv] || reAngle.MatchString(v) || reYourKey.MatchString(lv) || reAllStars.MatchString(v) {
 		return true
+	}
+	// Vendor-prefix + filler: hf_xxxx…, sk_live_0000…, ghp_AAAA…. A real token is
+	// high-entropy; a long value with near-zero entropy is placeholder filler,
+	// even when it matches a credential regex (some rules have no entropy floor).
+	if len(v) >= 12 && shannon(v) < 2.0 {
+		return true
+	}
+	return false
+}
+
+// exampleMarkers identify documentation/template env files by filename.
+var exampleMarkers = []string{"example", "sample", "template", ".dist", ".tmpl", ".tpl"}
+
+// isExampleFile reports whether path is a template/example env file
+// (.env.example, .env.sample, .env.template, .env.dist, …) — committed on
+// purpose, never a live secret.
+func isExampleFile(path string) bool {
+	if path == "" {
+		return false
+	}
+	b := strings.ToLower(filepath.Base(path))
+	for _, m := range exampleMarkers {
+		if strings.Contains(b, m) {
+			return true
+		}
 	}
 	return false
 }

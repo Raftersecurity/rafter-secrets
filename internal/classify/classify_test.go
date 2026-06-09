@@ -79,3 +79,25 @@ func TestClassify(t *testing.T) {
 		}
 	}
 }
+
+func TestClassify_ExamplesAndPlaceholders(t *testing.T) {
+	hfFiller := "hf_" + strings.Repeat("x", 34) // vendor prefix + zero-entropy filler
+	cases := []struct{ key, val, src, path, want string }{
+		// Example/template files are env regardless of value shape (filename wins).
+		{"OPENAI_API_KEY", tok("sk-proj-", 28), "envfile", "/p/.env.example", KindEnv},
+		{"HF_TOKEN", hfFiller, "envfile", "/p/.env.sample", KindEnv},
+		{"STRIPE_KEY", tok("sk_live_", 28), "envfile", "/p/config.env.dist", KindEnv},
+		{"AWS_SECRET", tok("AKIA", 16), "envfile", "/home/u/.codex/x/.env.template", KindEnv},
+		// Vendor-prefix + low/zero-entropy filler is a placeholder even in a real .env.
+		{"HF_TOKEN", hfFiller, "envfile", "/p/.env", KindEnv},
+		{"STRIPE_KEY", "sk_live_" + strings.Repeat("0", 24), "envfile", "/p/.env", KindEnv},
+		// ...but a real high-entropy token in a real .env is still a secret.
+		{"HF_TOKEN", tok("hf_", 34), "envfile", "/p/.env", KindSecret},
+		{"STRIPE_KEY", tok("sk_live_", 28), "envfile", "/p/.env", KindSecret},
+	}
+	for _, c := range cases {
+		if got := Classify(c.key, c.val, c.src, c.path); got != c.want {
+			t.Errorf("Classify(%q=%q path=%q) = %s, want %s", c.key, c.val, c.path, got, c.want)
+		}
+	}
+}
