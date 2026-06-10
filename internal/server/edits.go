@@ -202,8 +202,11 @@ func (s *Server) handleSecretSecure(w http.ResponseWriter, r *http.Request) {
 		writeJSONErr(w, http.StatusInternalServerError, "couldn't secure it: "+err.Error())
 		return
 	}
-	if req.Apply && res.Applied && s.rescan != nil {
-		s.rescan()
+	if req.Apply && res.Applied {
+		s.applyPermsToStore(res.Changes) // reflect new mode now; don't wait on the rescan
+		if s.rescan != nil {
+			s.rescan()
+		}
 	}
 
 	out := secureResponse{OK: true, Op: res.Op, OpID: res.OpID, Applied: res.Applied}
@@ -396,11 +399,44 @@ func (s *Server) handleSecureAll(w http.ResponseWriter, r *http.Request) {
 		for _, c := range res.Changes {
 			out.Files = append(out.Files, secureFile{Path: c.Path, OldMode: c.Old, NewMode: c.New})
 		}
-		if req.Apply && res.Applied && s.rescan != nil {
-			s.rescan()
+		if req.Apply && res.Applied {
+			// Reflect the new modes in the store NOW so the client's immediate
+			// reload is correct — don't wait on the async rescan (which, on a big
+			// inventory, lands well after the UI refreshes and leaves the count
+			// stale).
+			s.applyPermsToStore(res.Changes)
+			if s.rescan != nil {
+				s.rescan()
+			}
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+// applyPermsToStore writes the new file mode of each changed path back into the
+// store immediately, so exposure()/findings recompute correctly on the next
+// read without waiting for a rescan. The rescan still runs and will set the same
+// values.
+func (s *Server) applyPermsToStore(changes []edit.Change) {
+	if s.store == nil || len(changes) == 0 {
+		return
+	}
+	nm := make(map[string]string, len(changes))
+	for _, c := range changes {
+		nm[c.Path] = c.New
+	}
+	_ = s.store.Update(func(g *storage.Global) bool {
+		changed := false
+		for i := range g.Secrets {
+			for j := range g.Secrets[i].FoundIn {
+				if m, ok := nm[g.Secrets[i].FoundIn[j].Path]; ok && g.Secrets[i].FoundIn[j].Permissions != m {
+					g.Secrets[i].FoundIn[j].Permissions = m
+					changed = true
+				}
+			}
+		}
+		return changed
+	})
 }

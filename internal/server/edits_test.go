@@ -161,6 +161,18 @@ func TestSecureAllEndpoint_IDsFilter(t *testing.T) {
 	if modeOf(bPath) != 0o644 {
 		t.Fatalf("b.env was NOT in the filter, should be untouched: %04o", modeOf(bPath))
 	}
+	// The store's permissions must reflect the new mode immediately (not wait on
+	// the async rescan), so the UI's reload shows the file as no longer exposed.
+	var ga storage.Global
+	store.Read(func(g *storage.Global) { ga = *g })
+	for _, sec := range ga.Secrets {
+		if sec.ID == "a" && sec.FoundIn[0].Permissions != "0600" {
+			t.Fatalf("store perms for a not refreshed: %q, want 0600", sec.FoundIn[0].Permissions)
+		}
+		if sec.ID == "b" && sec.FoundIn[0].Permissions != "0644" {
+			t.Fatalf("store perms for b changed unexpectedly: %q", sec.FoundIn[0].Permissions)
+		}
+	}
 }
 
 func TestRotateEndpoint_PreviewApplyUndo(t *testing.T) {
