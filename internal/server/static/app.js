@@ -342,14 +342,10 @@
     const lines = list.map((s) => "- " + s.key_name + vendorPhrase(s) + " — in " + whereLine(s)).join("\n");
     return "These secrets are committed to a git repository (they may already be pushed). For EACH one, walk me through rotating it with the provider (revoke the old key, create a new one), updating the file, and removing the old value from git history — in a safe order, with exact commands. Don't ask me to paste any secret value.\n\n" + lines;
   }
-  function dupBulkPrompt(list) {
-    const lines = list.map((s) => "- " + s.key_name + vendorPhrase(s) + " — in " + fileLocations(s).map((f) => prettyPath(f.path)).join(", ")).join("\n");
-    return "These secrets are duplicated across several files. Help me pick the canonical copy and consolidate (or confirm each copy is intentional), so rotating one key doesn't mean editing many files. Don't ask me to paste any secret value.\n\n" + lines;
-  }
   // renderFocusView is the filtered view for a clicked stat card.
   const FOCUS = {
     committed: { match: inGitHistory, risk: true, eyebrow: "Committed to git", h: (n) => "secret" + (n === 1 ? "" : "s") + " committed to git", sub: "in history — possibly already pushed. Rotate each and purge it.", btn: (n) => "Copy one prompt to fix all " + n, prompt: committedBulkPrompt, none: "None committed to git — nice." },
-    dup: { match: isDuplicated, risk: false, eyebrow: "Saved in 2+ places", h: (n) => "secret" + (n === 1 ? "" : "s") + " in more than one file", sub: "the same secret copied across files — replace it everywhere, or whatever still uses the old copy breaks.", btn: (n) => "Copy a prompt to consolidate " + n, prompt: dupBulkPrompt, none: "No duplicates — nice." },
+    dup: { match: isDuplicated, risk: false, eyebrow: "Saved in 2+ places", h: (n) => "secret" + (n === 1 ? "" : "s") + " in more than one file", sub: "the same secret copied across files — replace it everywhere, or whatever still uses the old copy breaks.", none: "No duplicates — nice." },
   };
   function renderFocusView(kind, pool) {
     const cfg = FOCUS[kind];
@@ -362,7 +358,7 @@
         el("div", { class: "herotext" }, [ el("h1", { class: "bigh", text: cfg.h(list.length) }), el("div", { class: "bigsub", text: cfg.sub }) ]),
       ]),
       el("div", { class: "heroact" }, [
-        list.length ? agentBtn(cfg.btn(list.length), cfg.prompt(list)) : null,
+        list.length && cfg.prompt ? agentBtn(cfg.btn(list.length), cfg.prompt(list)) : null,
         el("button", { class: "btn ghost sm", onclick: () => { focus = null; render(); }, text: "← back to all secrets" }),
       ]),
     ]));

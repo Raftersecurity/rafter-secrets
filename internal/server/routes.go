@@ -77,7 +77,7 @@ func (s *Server) handleClose(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"version": "0.0.0-scaffold",
+		"version": "0.2.0",
 		"name":    "rafter-secrets",
 	})
 }
