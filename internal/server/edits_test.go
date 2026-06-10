@@ -123,6 +123,46 @@ func TestSecureAllEndpoint_OnlySecretsAndUndo(t *testing.T) {
 	}
 }
 
+func TestSecureAllEndpoint_IDsFilter(t *testing.T) {
+	s, ts, store, storePath := newTestServerWithStore(t)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := func(name string) string {
+		p := filepath.Join(root, name)
+		if err := os.WriteFile(p, []byte("K=v\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(p, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	aPath, bPath := mk("a.env"), mk("b.env")
+	if err := store.Update(func(g *storage.Global) bool {
+		g.Secrets = append(g.Secrets,
+			storage.Secret{ID: "a", KeyName: "A_KEY", Kind: "secret", FoundIn: []storage.FoundIn{{SourceType: storage.SourceEnvFile, Path: aPath, Permissions: "0644"}}},
+			storage.Secret{ID: "b", KeyName: "B_KEY", Kind: "secret", FoundIn: []storage.FoundIn{{SourceType: storage.SourceEnvFile, Path: bPath, Permissions: "0644"}}},
+		)
+		return true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.editEngine = func() *edit.Engine { return edit.New(filepath.Dir(storePath), []string{root}) }
+	s.SetRescan(func() {})
+	modeOf := func(p string) os.FileMode { fi, _ := os.Stat(p); return fi.Mode().Perm() }
+
+	// Only secret "a" is in the filtered view → only a.env is locked down.
+	doJSON(t, authedReq(t, "POST", ts.URL+"/api/secure-all", s.token, []byte(`{"apply":true,"ids":["a"]}`)), 200)
+	if modeOf(aPath) != 0o600 {
+		t.Fatalf("a.env should be tightened: %04o", modeOf(aPath))
+	}
+	if modeOf(bPath) != 0o644 {
+		t.Fatalf("b.env was NOT in the filter, should be untouched: %04o", modeOf(bPath))
+	}
+}
+
 func TestRotateEndpoint_PreviewApplyUndo(t *testing.T) {
 	s, ts, store, storePath := newTestServerWithStore(t)
 	root, err := filepath.EvalSymlinks(t.TempDir())

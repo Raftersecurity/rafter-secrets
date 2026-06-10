@@ -249,6 +249,8 @@
   .searchbar:focus { outline: none; border-color: var(--text); }
   .figure.clickable { cursor: pointer; transition: border-color .12s, box-shadow .12s; }
   .figure.clickable:hover { border-color: var(--red-line); box-shadow: 0 0 0 1px var(--red-line); }
+  .figure .figlink { margin-top: 9px; font-size: 12px; font-weight: 600; color: var(--red); }
+  .figure.clickable:hover .figlink { text-decoration: underline; }
   .valuebox .btn { display: inline-flex; align-items: center; }
   .spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--line-2); border-top-color: var(--text); border-radius: 50%; animation: spin .7s linear infinite; margin-right: 6px; }
   @keyframes spin { to { transform: rotate(360deg); } }

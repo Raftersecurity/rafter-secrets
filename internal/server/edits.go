@@ -134,6 +134,9 @@ func editTargetsOf(s *storage.Secret) []edit.Target {
 type secureRequest struct {
 	// Apply false (default) previews; true performs the change.
 	Apply bool `json:"apply"`
+	// IDs, when non-empty (secure-all only), restricts the operation to these
+	// secret IDs — so a filtered/searched view locks down only what it shows.
+	IDs []string `json:"ids,omitempty"`
 }
 
 type secureFile struct {
@@ -346,11 +349,21 @@ func (s *Server) handleSecureAll(w http.ResponseWriter, r *http.Request) {
 		skipped []string
 		seen    = map[string]bool{}
 	)
+	var only map[string]bool
+	if len(req.IDs) > 0 {
+		only = make(map[string]bool, len(req.IDs))
+		for _, id := range req.IDs {
+			only[id] = true
+		}
+	}
 	s.store.Read(func(g *storage.Global) {
 		for i := range g.Secrets {
 			sec := &g.Secrets[i]
 			if effectiveKind(sec) != "secret" {
 				continue
+			}
+			if only != nil && !only[sec.ID] {
+				continue // filtered/searched view → only these IDs
 			}
 			for _, t := range editTargetsOf(sec) {
 				if seen[t.Path] {

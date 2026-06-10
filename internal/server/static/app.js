@@ -306,7 +306,8 @@
     const live = (pool || state.secrets).filter((s) => !isStale(s));
     const total = live.length;
     const attn = live.filter(needsAttention).length;
-    const exposedN = live.filter((s) => exposure(s)).length;
+    const exposedSecrets = live.filter((s) => exposure(s));
+    const exposedN = exposedSecrets.length;
 
     // The risk count is the one big number; everything else is smaller context.
     const big = el("div", { class: "herobig " + (attn > 0 ? "risk" : "calm") });
@@ -328,7 +329,7 @@
     // One primary action, attached to the hero (not a floating card).
     if (exposedN > 0) {
       hero.appendChild(el("div", { class: "heroact" }, [
-        el("button", { class: "btn primary", onclick: secureAllFix, text: "Lock down " + exposedN + " readable file" + (exposedN === 1 ? "" : "s") }),
+        el("button", { class: "btn primary", onclick: () => secureAllFix(exposedSecrets), text: "Lock down " + exposedN + " readable file" + (exposedN === 1 ? "" : "s") }),
         el("span", { class: "hint", text: "make them private to you — previewed first, undoable" }),
       ]));
     }
@@ -372,8 +373,13 @@
     const pct = (n) => total ? Math.max(4, Math.round((n / total) * 100)) : 0;
     const wrap = el("div", { class: "figures" });
     wrap.appendChild(figure("Tracked", total, null, "ink", 100, "saved in plain files"));
-    const cf = figure("Committed to git", committed, committed ? ["bad", "Leak"] : ["ok", "Clear"], "red", pct(committed), committed ? "click to see just these" : "may be pushed somewhere");
-    if (committed > 0) { cf.classList.add("clickable"); cf.title = "Show only the committed-to-git secrets"; cf.addEventListener("click", () => { committedOnly = true; render(); }); }
+    const cf = figure("Committed to git", committed, committed ? ["bad", "Leak"] : ["ok", "Clear"], "red", pct(committed), committed ? "may be pushed somewhere" : "none in history");
+    if (committed > 0) {
+      cf.classList.add("clickable");
+      cf.title = "Show only the committed-to-git secrets";
+      cf.addEventListener("click", () => { committedOnly = true; render(); });
+      cf.appendChild(el("div", { class: "figlink", text: "Filter to these →" }));
+    }
     wrap.appendChild(cf);
     wrap.appendChild(figure("In 2+ places", dup, dup ? ["warn", "Action"] : ["ok", "Good"], "amber", pct(dup), "easy to lose track of"));
     return wrap;
@@ -567,9 +573,13 @@
     setTimeout(() => { t.style.transition = "opacity .3s"; t.style.opacity = "0"; setTimeout(() => t.remove(), 300); }, 9000);
   }
 
-  async function secureAllFix() {
+  async function secureAllFix(targets) {
+    // Scope to the passed secrets (the filtered/searched exposed set) so the
+    // hero button locks down exactly what's on screen — not every exposed file.
+    const ids = (targets && targets.length) ? targets.map((s) => s.id) : null;
+    const body = (apply) => JSON.stringify(ids ? { apply, ids } : { apply });
     let prev;
-    try { prev = await api("/api/secure-all", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apply: false }) }); }
+    try { prev = await api("/api/secure-all", { method: "POST", headers: { "Content-Type": "application/json" }, body: body(false) }); }
     catch (e) { setToast("Couldn't check that fix: " + e.message, true); return; }
     const files = (prev && prev.files) || [];
     const skipped = (prev && prev.skipped_not_owned) || [];
@@ -583,7 +593,7 @@
       confirmText: "Lock them down",
       onConfirm: async () => {
         try {
-          const r = await api("/api/secure-all", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apply: true }) });
+          const r = await api("/api/secure-all", { method: "POST", headers: { "Content-Type": "application/json" }, body: body(true) });
           closeModal();
           const n = (r.files || []).length;
           toastWithUndo(n + " file" + (n === 1 ? "" : "s") + " locked down — only you can read " + (n === 1 ? "it" : "them") + " now.", r.op_id);
