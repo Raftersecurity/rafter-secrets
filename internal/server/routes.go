@@ -24,16 +24,16 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/scan-config", s.handleScanConfigUpdate)
 
 	mux.HandleFunc("GET /api/secrets", s.handleSecretsList)
-	mux.HandleFunc("POST /api/secrets", s.handleSecretCreate)
 	mux.HandleFunc("POST /api/secrets/{id}/reveal", s.handleSecretReveal)
 	mux.HandleFunc("PUT /api/secrets/{id}/annotation", s.handleSecretAnnotate)
 	mux.HandleFunc("POST /api/secrets/{id}/stale", s.handleSecretMarkStale)
 	mux.HandleFunc("POST /api/secrets/{id}/rotated", s.handleSecretMarkRotated)
 
 	// In-app fixes — the only endpoints that write user files (previewed,
-	// undoable; see docs/design/in-app-edits.md).
+	// fully reversible; see docs/design/in-app-edits.md). Securing a file
+	// only tightens its permissions; it never changes a secret's value.
+	// Changing/adding/removing values is CLI-only by design.
 	mux.HandleFunc("POST /api/secrets/{id}/secure", s.handleSecretSecure)
-	mux.HandleFunc("POST /api/secrets/{id}/rotate", s.handleSecretRotate)
 	mux.HandleFunc("POST /api/secure-all", s.handleSecureAll)
 	mux.HandleFunc("POST /api/open", s.handleOpenFile)
 	mux.HandleFunc("POST /api/undo", s.handleUndo)

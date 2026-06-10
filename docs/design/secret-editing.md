@@ -162,12 +162,15 @@ Decisions:
 - `internal/edit`: a per-format `Editor` (`Encode` / `Apply` / re-`Verify`), the
   transaction runner, the backup store, undo, and the audit log. Reuses the
   existing scanners for the verify round-trip. Stdlib only.
-- API (all preview-first; `{apply:true}` or a two-step preview→apply):
-  `POST /api/secrets/{id}/rotate`, `POST /api/secrets/{id}/delete`,
-  `POST /api/secrets/{id}/write` (add into a file), `GET /api/edits` (history),
-  `POST /api/edits/{op}/undo`. State-changing → covered by the Origin guard.
+- Web API (all preview-first; `{apply:true}` or a two-step preview→apply):
+  `POST /api/secrets/{id}/secure` and `POST /api/secure-all` (tighten a file's
+  permissions — never a value), `POST /api/undo`, `POST /api/open`. **The web
+  has no value-editing endpoints**: rotating, adding, or removing a secret's
+  value is CLI-only by design, so a click in the browser can never change a
+  value. State-changing requests are covered by the Origin guard.
 - CLI: `rafter-secrets rotate|add|rm|undo|history`, each with `--dry-run`
   (prints the diff; the default) and `--yes` (apply). JSON output for agents.
+  This is the only surface that changes a secret's value.
 
 ## Gate
 

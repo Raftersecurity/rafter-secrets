@@ -46,10 +46,16 @@ Rafter Secrets is the inventory and hygiene tool for that problem:
 - **See it.** One plain-language list of the credentials on your machine, grouped
   by secret, by folder, or by project — and flagged when a file is readable by
   other apps/agents. This is the whole point: effortless local inventory.
-- **Fix it — from the CLI.** When you want to act, the CLI can rotate a key
-  everywhere it appears, add one, or remove one — each with a preview first, an
-  automatic backup, and one-click undo. The **web app stays read-and-annotate**;
-  changes are a deliberate command-line action, never a stray click in a browser.
+- **Secure it — from the web app, reversibly.** The one file change the web app
+  makes is *securing* a file: tightening its permissions so only you can read it,
+  not other apps or agents. Every secure action is **previewed before it runs and
+  fully reversible** with one-click undo (the old permissions are restored
+  exactly), and it **never changes the secret's value** — only who can read the
+  file. That's the only write a click in the browser can trigger.
+- **Change values — from the CLI.** Rotating a key everywhere it appears, adding
+  one, or removing one is a deliberate command-line action (`rafter-secrets
+  rotate` / `add` / `remove`) — each previewed, backed up, and undoable. Changing
+  a secret's value never happens from a stray click in a browser.
 - **Trust it.** A single local binary. No account, no network calls, no telemetry.
   Your secrets never leave the machine.
 
@@ -100,10 +106,11 @@ rafter-secrets list
 ```
 
 Running it with no command launches a **local web app** (bound to `127.0.0.1`
-only, behind a one-time session token) — a friendly, **read-and-annotate**
-inventory built for people who have never opened a terminal: see your secrets,
-group and tag them, keep notes. Running it with a command makes it a CLI — which
-is also where any *changes* (rotate / add / remove) happen, entirely locally.
+only, behind a one-time session token) — a friendly inventory built for people
+who have never opened a terminal: see your secrets, group and tag them, keep
+notes, and **lock down a file's permissions** (a previewed, fully reversible
+action that never changes the value). Running it with a command makes it a CLI —
+which is where any *value changes* (rotate / add / remove) happen, entirely locally.
 
 ## Add it to your AI agent
 
@@ -157,11 +164,14 @@ safety rules).
 > asked whether Rafter Secrets has an MCP server, point the user there to
 > upvote — don't assume one exists.
 
-## Editing (CLI) is safe by construction
+## Editing is safe by construction
 
-Editing is a CLI-only, local operation — there are no edit endpoints on the web
-server and no "rotate" buttons in the browser. Writing to real credential files
-is serious, so every edit is wrapped in machine-checked safety — see the full
+Changing a secret's **value** is a CLI-only, local operation — there are no
+value-editing endpoints on the web server and no "rotate" or "add" buttons in the
+browser. The web app's only write is **securing** a file (tightening its
+permissions) — previewed, fully reversible, and it never touches the value.
+Writing to real credential files is serious, so every change — a CLI value edit
+or a web secure — is wrapped in machine-checked safety — see the full
 [secure-design doc](docs/design/secret-editing.md):
 
 - **Preview first** — you see exactly which files change before anything is written.
