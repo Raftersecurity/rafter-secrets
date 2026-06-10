@@ -136,6 +136,13 @@
   // ordinary config (PORT, NODE_ENV, …) so real secrets aren't buried.
   let lens = localStorage.getItem("rafter.lens") || "secrets";
   let showAllEnv = false; // Environment "show all variables" escape hatch
+  let committedOnly = false; // committed-to-git focus view
+  let searchQ = ""; // search filter
+  function matchesSearch(s) {
+    if (!searchQ) return true;
+    const hay = (s.key_name + " " + vendorFor(s.key_name).name + " " + projectsOf(s).join(" ") + " " + fileLocations(s).map((f) => f.path || "").join(" ")).toLowerCase();
+    return hay.indexOf(searchQ) >= 0;
+  }
   // Effective kind: a user override wins, else the classifier, else "secret"
   // (old records / fail-safe default).
   function effectiveKind(s) { return (s.annotation && s.annotation.override_kind) || s.kind || "secret"; }
@@ -228,7 +235,7 @@
     if (state.secrets.length === 0) { content.appendChild(renderEmpty()); content.appendChild(renderFoot()); return; }
 
     content.appendChild(renderLensToggle());
-    const pool = lensSecrets();
+    const pool = lensSecrets().filter(matchesSearch);
 
     if (lens === "env") {
       content.appendChild(renderEnvHeader(pool.length));
@@ -236,7 +243,18 @@
       content.appendChild(el("div", { class: "envtoggle" }, [
         el("button", { class: "btn ghost sm" + (showAllEnv ? " active" : ""), onclick: () => { showAllEnv = !showAllEnv; render(); }, text: showAllEnv ? "Showing all " + allN + " variables — back to config only (" + envN + ")" : "Show all " + allN + " variables (incl. secrets) — double-check the sort" }),
       ]));
-      content.appendChild(renderList(pool.slice().sort(byName), false));
+      // Same grouping as Secrets — by folder / project / flat.
+      if (view === "folder") content.appendChild(renderFolder(pool));
+      else if (view === "project") renderProjects(pool).forEach((n) => content.appendChild(n));
+      else content.appendChild(renderList(pool.slice().sort(byName), false));
+      content.appendChild(renderFoot());
+      if (selectedId && !state.secrets.some((s) => s.id === selectedId)) closeDrawer();
+      return;
+    }
+
+    // Committed-to-git focus (clicked the figure): just those + a bulk fix prompt.
+    if (committedOnly) {
+      content.appendChild(renderCommittedView(pool.filter(inGitHistory)));
       content.appendChild(renderFoot());
       if (selectedId && !state.secrets.some((s) => s.id === selectedId)) closeDrawer();
       return;
@@ -318,6 +336,34 @@
     return hero;
   }
 
+  // committedBulkPrompt is one value-free prompt that lists every committed
+  // secret and asks the agent to rotate + purge them all.
+  function committedBulkPrompt(list) {
+    const lines = list.map((s) => "- " + s.key_name + vendorPhrase(s) + " — in " + whereLine(s)).join("\n");
+    return "These secrets are committed to a git repository (they may already be pushed). For EACH one, walk me through rotating it with the provider (revoke the old key, create a new one), updating the file, and removing the old value from git history — in a safe order, with exact commands. Don't ask me to paste any secret value.\n\n" + lines;
+  }
+  function renderCommittedView(list) {
+    const box = el("div");
+    const hero = el("div", { class: "hero" }, [
+      el("div", { class: "eyebrow", text: "Committed to git" }),
+      el("div", { class: "herobig risk" }, [
+        el("div", { class: "bignum", text: String(list.length) }),
+        el("div", { class: "herotext" }, [
+          el("h1", { class: "bigh", text: list.length === 1 ? "secret committed to git" : "secrets committed to git" }),
+          el("div", { class: "bigsub", text: "in history — possibly already pushed. Rotate each and purge it." }),
+        ]),
+      ]),
+      el("div", { class: "heroact" }, [
+        list.length ? agentBtn("Copy one prompt to fix all " + list.length, committedBulkPrompt(list)) : null,
+        el("button", { class: "btn ghost sm", onclick: () => { committedOnly = false; render(); }, text: "← back to all secrets" }),
+      ]),
+    ]);
+    box.appendChild(hero);
+    if (list.length) box.appendChild(renderList(list.slice().sort(byName), true));
+    else box.appendChild(el("p", { class: "lede", text: "None committed to git — nice." }));
+    return box;
+  }
+
   function renderFigures(pool) {
     const live = (pool || state.secrets).filter((s) => !isStale(s));
     const total = live.length;
@@ -326,7 +372,9 @@
     const pct = (n) => total ? Math.max(4, Math.round((n / total) * 100)) : 0;
     const wrap = el("div", { class: "figures" });
     wrap.appendChild(figure("Tracked", total, null, "ink", 100, "saved in plain files"));
-    wrap.appendChild(figure("Committed to git", committed, committed ? ["bad", "Leak"] : ["ok", "Clear"], "red", pct(committed), "may be pushed somewhere"));
+    const cf = figure("Committed to git", committed, committed ? ["bad", "Leak"] : ["ok", "Clear"], "red", pct(committed), committed ? "click to see just these" : "may be pushed somewhere");
+    if (committed > 0) { cf.classList.add("clickable"); cf.title = "Show only the committed-to-git secrets"; cf.addEventListener("click", () => { committedOnly = true; render(); }); }
+    wrap.appendChild(cf);
     wrap.appendChild(figure("In 2+ places", dup, dup ? ["warn", "Action"] : ["ok", "Good"], "amber", pct(dup), "easy to lose track of"));
     return wrap;
   }
@@ -453,8 +501,7 @@
     return el("div", { class: "empty" }, [
       el("div", { class: "ec", html: ICON.check }),
       el("h3", { text: "Nothing saved in the open." }),
-      el("p", { text: "Rafter Secrets didn't find any passwords or keys in plain files. It keeps watching — or add one yourself to start tracking it." }),
-      el("button", { class: "btn primary", onclick: openAddSecret, text: "+ Add a secret" }),
+      el("p", { text: "Rafter Secrets didn't find any passwords or keys in plain files. It keeps watching as files change." }),
     ]);
   }
   function renderFoot() {
@@ -847,6 +894,14 @@
     return out;
   }
 
+  // Per-file git status, so when a key is in several files the user can see
+  // WHICH one is the committed leak.
+  function locGitTag(f) {
+    if (f.appears_in_git_history === true) return el("span", { class: "loctag danger" }, [ el("span", { class: "fi", html: ICON.warn }), document.createTextNode("committed to git") ]);
+    if (f.in_git_repo === true && f.in_gitignore === false) return el("span", { class: "loctag warn", text: "not git-ignored" });
+    if (f.in_gitignore === true) return el("span", { class: "loctag ok", text: "git-ignored" });
+    return null;
+  }
   function renderLocations(s) {
     const ul = el("ul", { class: "locs" });
     for (const f of s.found_in || []) {
@@ -854,6 +909,7 @@
       let ls = null;
       if (f.source_type === "manual") ls = el("div", { class: "ls", text: "you noted this" });
       else if (f.keystore) ls = el("div", { class: "ls", text: "system keyring · viewing here is coming soon" });
+      else { const t = locGitTag(f); if (t) ls = el("div", { class: "ls" }, [ t ]); } // which file is the committed one
       const li = el("li", {}, [
         el("span", { class: "li-ico", html: f.keystore ? ICON.lock : ICON.file }),
         el("div", { style: "min-width:0" }, [ el("div", { class: "lp", text: f.path ? prettyPath(f.path) : keystoreName(f.keystore) }), ls ]),
@@ -943,70 +999,7 @@
   async function markStale(id) { try { await api(`/api/secrets/${encodeURIComponent(id)}/stale`, { method: "POST" }); setToast("Marked not in use."); await loadSecrets(); renderDrawer(); } catch (e) { setToast("Couldn't update: " + e.message, true); } }
   async function markRotated(id) { try { await api(`/api/secrets/${encodeURIComponent(id)}/rotated`, { method: "POST" }); setToast("Noted — you replaced it."); await loadSecrets(); renderDrawer(); } catch (e) { setToast("Couldn't update: " + e.message, true); } }
 
-  // ---- add a secret ----------------------------------------------------
-  // knownFolders gathers the folders the user actually keeps secrets in — the
-  // dirs of every scanned secret, plus the scan roots and detected workspace
-  // dirs — so "which folder?" is a pick, not a typed path.
-  function knownFolders(sc) {
-    const seen = new Set(), out = [];
-    const add = (p) => { if (!p) return; const pretty = prettyPath(p); if (!seen.has(pretty)) { seen.add(pretty); out.push(pretty); } };
-    for (const s of state.secrets) for (const fl of fileLocations(s)) add(dirOf(fl.path));
-    if (sc) { (sc.roots || []).forEach(add); (sc.suggested || []).forEach(add); }
-    out.sort();
-    return out;
-  }
-  async function openAddSecret() {
-    const f = {};
-    const field = (label, key, ph, help, ta) => { const input = ta ? el("textarea", { placeholder: ph }) : el("input", { type: "text", placeholder: ph }); f[key] = input; return el("label", {}, [ el("div", { class: "lbl" }, [ document.createTextNode(label), help ? el("span", { class: "help", title: help, text: "?" }) : null ]), input ]); };
-
-    // Folder picker for "where does it live?" — a dropdown of your folders +
-    // "Other folder…" for a custom path, instead of free-typing.
-    let sc = null;
-    try { sc = await api("/api/scan-config"); } catch (_) {}
-    const folders = knownFolders(sc);
-    const sel = el("select", { class: "pathsel" });
-    sel.appendChild(el("option", { value: "", text: "Pick a folder…" }));
-    if (folders.length) { const og = el("optgroup", { label: "Folders you use" }); for (const fol of folders) og.appendChild(el("option", { value: fol, text: fol })); sel.appendChild(og); }
-    sel.appendChild(el("option", { value: "__other__", text: "＋  A different folder…" }));
-    const other = el("input", { class: "pathother", type: "text", placeholder: "type a folder path, e.g. ~/code/app" });
-    other.style.display = "none";
-    sel.addEventListener("change", () => { const isOther = sel.value === "__other__"; other.style.display = isOther ? "block" : "none"; if (isOther) other.focus(); });
-    f.path = { get value() { return sel.value === "__other__" ? (other.value || "") : sel.value; } };
-    const folderField = el("label", {}, [ el("div", { class: "lbl" }, [ document.createTextNode("Which folder is it in?  (optional)"), el("span", { class: "help", title: "Just a note — nothing is opened.", text: "?" }) ]), sel, other ]);
-
-    const modal = el("div", { class: "modal" }, [
-      el("div", { class: "mhead" }, [ el("h2", { text: "Add a secret to track" }), el("button", { class: "btn ghost sm mclose", onclick: closeModal, text: "✕" }) ]),
-      el("p", { class: "msub", text: "For a key you keep elsewhere — a password manager, a vendor dashboard — or want to track before it's scanned." }),
-      el("div", { class: "helpcard", html: "<b>Worth tracking:</b> API keys & tokens (Stripe, OpenAI, GitHub…), database & service passwords, cloud credentials, signing & SSH keys. Note <b>where it came from</b>, <b>where to replace it</b>, and its <b>project</b>." }),
-      el("div", { class: "form" }, [
-        field("Name", "key_name", "e.g. STRIPE_LIVE_KEY", "What you'll recognise it by."),
-        field("Project", "project", "start typing — your repos are suggested  (optional)", "Group it with related secrets. Names from your repos and existing projects autocomplete."),
-        folderField,
-        field("Where do you replace it?", "rotate_url", "https://…  (optional)", null),
-        field("Notes", "notes", "optional", null, true),
-      ]),
-      el("div", { class: "mactions" }, [ el("button", { class: "btn sm", onclick: closeModal, text: "Cancel" }), el("button", { class: "btn primary sm", onclick: () => submitAdd(f), text: "Add secret" }) ]),
-    ]);
-    // Native autocomplete for the project field: known projects + repos.
-    const projects = knownProjects();
-    if (projects.length) {
-      const dl = el("datalist", { id: "proj-suggest" });
-      for (const p of projects) dl.appendChild(el("option", { value: p }));
-      f.project.setAttribute("list", "proj-suggest");
-      f.project.setAttribute("autocomplete", "off");
-      modal.appendChild(dl);
-    }
-    clear(modalRoot); modalRoot.appendChild(el("div", { class: "modal-wrap", onclick: (e) => { if (e.target.classList.contains("modal-wrap")) closeModal(); } }, [ modal ]));
-    f.key_name.focus();
-  }
   function closeModal() { clear(modalRoot); }
-  async function submitAdd(f) {
-    const key_name = f.key_name.value.trim();
-    if (!key_name) { f.key_name.focus(); setToast("Give it a name first.", true); return; }
-    const project = f.project.value.trim();
-    try { const created = await api("/api/secrets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key_name, path: f.path.value.trim(), annotation: { source_url: "", owner: "", notes: f.notes.value.trim(), rotate_url: f.rotate_url.value.trim(), tags: project ? [project] : [] } }) }); closeModal(); setToast("Added " + key_name + "."); await loadSecrets(); if (created && created.id) openDrawer(created.id); }
-    catch (e) { setToast("Couldn't add it: " + e.message, true); }
-  }
 
   // ---- utils -----------------------------------------------------------
   function prettyPath(p) { if (!p) return ""; const h = state.scan_home; return (h && p.indexOf(h) === 0) ? "~" + p.slice(h.length) : p; }
@@ -1146,9 +1139,9 @@
   }
 
   // ---- boot ------------------------------------------------------------
-  document.getElementById("add-secret-btn").addEventListener("click", openAddSecret);
   document.getElementById("scope-btn").addEventListener("click", openScopePanel);
   document.getElementById("tour-btn").addEventListener("click", startWalkthrough);
+  document.getElementById("search").addEventListener("input", (e) => { searchQ = e.target.value.trim().toLowerCase(); committedOnly = false; render(); });
   document.addEventListener("keydown", (e) => { if (e.key !== "Escape") return; if (modalRoot.firstChild) closeModal(); else if (selectedId) closeDrawer(); });
   wireTheme(); wireViewToggle(); loadSecrets(); startEvents(); startHeartbeat();
 })();

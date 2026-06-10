@@ -179,6 +179,8 @@
   .tag.add:hover { color: var(--text); border-color: var(--faint); }
   .suggests { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin-top: 11px; }
   .suggests .slabel { font-size: 11.5px; color: var(--faint); margin-right: 1px; }
+  /* keep the Suggested chips from running into the card below in the scope modal */
+  .modal .suggests { margin: 14px 0 18px; }
   .tag.suggest { background: var(--surface-h); border: 1px solid var(--line-2); color: var(--dim); cursor: pointer; }
   .tag.suggest:hover { color: var(--text); border-color: var(--faint); background: var(--surface); }
   .tag.suggest .gh { display: inline-flex; opacity: 0.6; margin-right: -1px; }
@@ -238,6 +240,15 @@
   .agentcopy .fi { display: inline-flex; opacity: .7; }
   .btn[disabled] { opacity: .6; cursor: default; }
   .envtoggle { margin: 4px 0 14px; }
+  .loctag { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; padding: 2px 9px; border-radius: 999px; margin-top: 3px; }
+  .loctag .fi { display: inline-flex; }
+  .loctag.danger { color: var(--red); background: var(--red-bg); }
+  .loctag.warn { color: var(--amber); background: var(--amber-bg); }
+  .loctag.ok { color: var(--green); background: var(--green-bg); }
+  .searchbar { font: inherit; font-size: 13px; width: 190px; max-width: 36vw; padding: 7px 12px; border: 1px solid var(--line-2); border-radius: 9px; background: var(--surface); color: var(--text); }
+  .searchbar:focus { outline: none; border-color: var(--text); }
+  .figure.clickable { cursor: pointer; transition: border-color .12s, box-shadow .12s; }
+  .figure.clickable:hover { border-color: var(--red-line); box-shadow: 0 0 0 1px var(--red-line); }
   .valuebox .btn { display: inline-flex; align-items: center; }
   .spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--line-2); border-top-color: var(--text); border-radius: 50%; animation: spin .7s linear infinite; margin-right: 6px; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -355,8 +366,8 @@
       <button data-view="folder" role="tab">By folder</button>
       <button data-view="project" role="tab">By project</button>
     </div>
+    <input id="search" class="searchbar" type="search" placeholder="Search secrets…" aria-label="Search" autocomplete="off" />
     <div class="spacer"></div>
-    <button id="add-secret-btn" class="btn primary sm">+ Add a secret</button>
     <div class="watching" id="scan-status" title="Re-checks automatically whenever a watched file changes."><span class="live"></span><span id="scan-status-text">watching for changes</span></div>
     <button id="tour-btn" class="iconbtn" title="Take the tour" aria-label="Take the tour">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.5-3 4"/><path d="M12 17h.01"/></svg>
