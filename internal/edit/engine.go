@@ -319,11 +319,39 @@ func (e *Engine) writeManifest(m manifest) error {
 
 func (e *Engine) readManifest(opID string) (manifest, error) {
 	var m manifest
+	// SECURITY: opID names a subdirectory of backups/ and arrives from the
+	// caller (e.g. op_id in POST /api/undo). filepath.Join cleans "..", so an
+	// unvalidated id like "../../home/victim/.zshrc" would escape backups/ and
+	// load an attacker-planted manifest.json — whose Path/Backup fields then
+	// drive Undo's arbitrary file read+write. Refuse anything that isn't a
+	// well-formed op id (the single choke point every undo path goes through).
+	if !validOpID(opID) {
+		return m, fmt.Errorf("no record of operation %q to undo", opID)
+	}
 	b, err := os.ReadFile(filepath.Join(e.configDir, "backups", opID, "manifest.json"))
 	if err != nil {
 		return m, fmt.Errorf("no record of operation %q to undo", opID)
 	}
 	return m, json.Unmarshal(b, &m)
+}
+
+// validOpID reports whether s is a well-formed operation id as produced by
+// newOpID ("<timestamp>-<hex>", e.g. "20240610T143022-a3f2dd0b1c4e"). The
+// charset is restricted to [0-9A-Za-z-], so s can never contain a path
+// separator, ".", or "..": it always names exactly one directory level under
+// backups/. This is the boundary that makes readManifest traversal-proof.
+func validOpID(s string) bool {
+	if s == "" || len(s) > 64 {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9', r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // audit appends one line to the JSONL audit log. It records who/what/when —

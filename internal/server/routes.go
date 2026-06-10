@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // routes wires every URL pattern handled by the Rafter Secrets HTTP surface.
@@ -125,8 +126,11 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			}
 			// One frame per event. The "event:" line lets clients use
 			// addEventListener(<type>, ...) to route by Type without
-			// parsing the JSON envelope.
-			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Type, payload); err != nil {
+			// parsing the JSON envelope. Type is internal/constant today, but
+			// strip CR/LF defensively so it can never inject extra SSE frames
+			// (the JSON payload is already newline-escaped by json.Marshal).
+			etype := strings.NewReplacer("\r", "", "\n", "").Replace(ev.Type)
+			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", etype, payload); err != nil {
 				return
 			}
 			flusher.Flush()

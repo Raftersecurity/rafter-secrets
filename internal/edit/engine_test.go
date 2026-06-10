@@ -34,6 +34,29 @@ func keyAt(t *testing.T, path string) (key, value string, line int) {
 
 func newEngine(t *testing.T) *Engine { return New(t.TempDir(), nil) }
 
+// TestUndoRejectsPathTraversal locks in the readManifest op-id boundary: an
+// op_id that tries to traverse out of backups/ (e.g. via POST /api/undo) must
+// be refused, so a planted manifest.json can't drive an arbitrary file write.
+func TestUndoRejectsPathTraversal(t *testing.T) {
+	for _, s := range []string{
+		"../../etc/passwd", "..", ".", "a/b", `a\b`, "", "x/../../y",
+		"has space", "semi;colon", "tilde~", "slash/",
+	} {
+		if validOpID(s) {
+			t.Errorf("validOpID(%q) = true, want false (would allow traversal)", s)
+		}
+	}
+	for _, s := range []string{"20240610T143022-a3f2dd0b1c4e", "20060102T150405-000000000000"} {
+		if !validOpID(s) {
+			t.Errorf("validOpID(%q) = false, want true (valid op id)", s)
+		}
+	}
+	// End to end: a traversal id is refused before any filesystem access.
+	if err := newEngine(t).Undo("../../../../tmp/anything"); err == nil {
+		t.Fatal("Undo accepted a path-traversal op id")
+	}
+}
+
 func TestRotate_AllFormats_ApplyVerifyUndo(t *testing.T) {
 	home := t.TempDir()
 	cases := []struct{ rel, content string }{
