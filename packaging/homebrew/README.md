@@ -21,7 +21,7 @@ gh repo create Raftersecurity/homebrew-tap --public \
 # then seed it:
 mkdir -p tap/Formula && cp rafter-secrets.rb tap/Formula/
 cd tap && git init -q && git add -A \
-  && git commit -q -m "Add rafter-secrets formula at v0.2.0" \
+  && git commit -q -m "Add rafter-secrets formula at v0.3.0" \
   && git branch -M main \
   && git remote add origin https://github.com/Raftersecurity/homebrew-tap \
   && git push -u origin main
