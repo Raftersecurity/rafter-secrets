@@ -136,7 +136,7 @@
   // ordinary config (PORT, NODE_ENV, …) so real secrets aren't buried.
   let lens = localStorage.getItem("rafter.lens") || "secrets";
   let showAllEnv = false; // Environment "show all variables" escape hatch
-  let committedOnly = false; // committed-to-git focus view
+  let focus = null; // null | "committed" | "dup" — figure-driven focus filter
   let searchQ = ""; // search filter
   function matchesSearch(s) {
     if (!searchQ) return true;
@@ -252,9 +252,9 @@
       return;
     }
 
-    // Committed-to-git focus (clicked the figure): just those + a bulk fix prompt.
-    if (committedOnly) {
-      content.appendChild(renderCommittedView(pool.filter(inGitHistory)));
+    // Figure-driven focus (clicked a stat card): just those + a bulk prompt.
+    if (focus) {
+      content.appendChild(renderFocusView(focus, pool));
       content.appendChild(renderFoot());
       if (selectedId && !state.secrets.some((s) => s.id === selectedId)) closeDrawer();
       return;
@@ -337,31 +337,37 @@
     return hero;
   }
 
-  // committedBulkPrompt is one value-free prompt that lists every committed
-  // secret and asks the agent to rotate + purge them all.
+  // Value-free bulk prompts for the focus views.
   function committedBulkPrompt(list) {
     const lines = list.map((s) => "- " + s.key_name + vendorPhrase(s) + " — in " + whereLine(s)).join("\n");
     return "These secrets are committed to a git repository (they may already be pushed). For EACH one, walk me through rotating it with the provider (revoke the old key, create a new one), updating the file, and removing the old value from git history — in a safe order, with exact commands. Don't ask me to paste any secret value.\n\n" + lines;
   }
-  function renderCommittedView(list) {
+  function dupBulkPrompt(list) {
+    const lines = list.map((s) => "- " + s.key_name + vendorPhrase(s) + " — in " + fileLocations(s).map((f) => prettyPath(f.path)).join(", ")).join("\n");
+    return "These secrets are duplicated across several files. Help me pick the canonical copy and consolidate (or confirm each copy is intentional), so rotating one key doesn't mean editing many files. Don't ask me to paste any secret value.\n\n" + lines;
+  }
+  // renderFocusView is the filtered view for a clicked stat card.
+  const FOCUS = {
+    committed: { match: inGitHistory, risk: true, eyebrow: "Committed to git", h: (n) => "secret" + (n === 1 ? "" : "s") + " committed to git", sub: "in history — possibly already pushed. Rotate each and purge it.", btn: (n) => "Copy one prompt to fix all " + n, prompt: committedBulkPrompt, none: "None committed to git — nice." },
+    dup: { match: isDuplicated, risk: false, eyebrow: "Saved in 2+ places", h: (n) => "secret" + (n === 1 ? "" : "s") + " in more than one file", sub: "the same secret copied across files — replace it everywhere, or whatever still uses the old copy breaks.", btn: (n) => "Copy a prompt to consolidate " + n, prompt: dupBulkPrompt, none: "No duplicates — nice." },
+  };
+  function renderFocusView(kind, pool) {
+    const cfg = FOCUS[kind];
+    const list = pool.filter(cfg.match);
     const box = el("div");
-    const hero = el("div", { class: "hero" }, [
-      el("div", { class: "eyebrow", text: "Committed to git" }),
-      el("div", { class: "herobig risk" }, [
-        el("div", { class: "bignum", text: String(list.length) }),
-        el("div", { class: "herotext" }, [
-          el("h1", { class: "bigh", text: list.length === 1 ? "secret committed to git" : "secrets committed to git" }),
-          el("div", { class: "bigsub", text: "in history — possibly already pushed. Rotate each and purge it." }),
-        ]),
+    box.appendChild(el("div", { class: "hero" }, [
+      el("div", { class: "eyebrow", text: cfg.eyebrow }),
+      el("div", { class: "herobig " + (cfg.risk ? "risk" : "calm") }, [
+        el("div", { class: "bignum" + (cfg.risk ? "" : " ok"), text: String(list.length) }),
+        el("div", { class: "herotext" }, [ el("h1", { class: "bigh", text: cfg.h(list.length) }), el("div", { class: "bigsub", text: cfg.sub }) ]),
       ]),
       el("div", { class: "heroact" }, [
-        list.length ? agentBtn("Copy one prompt to fix all " + list.length, committedBulkPrompt(list)) : null,
-        el("button", { class: "btn ghost sm", onclick: () => { committedOnly = false; render(); }, text: "← back to all secrets" }),
+        list.length ? agentBtn(cfg.btn(list.length), cfg.prompt(list)) : null,
+        el("button", { class: "btn ghost sm", onclick: () => { focus = null; render(); }, text: "← back to all secrets" }),
       ]),
-    ]);
-    box.appendChild(hero);
-    if (list.length) box.appendChild(renderList(list.slice().sort(byName), true));
-    else box.appendChild(el("p", { class: "lede", text: "None committed to git — nice." }));
+    ]));
+    if (list.length) box.appendChild(renderList(list.slice().sort(byName), cfg.risk));
+    else box.appendChild(el("p", { class: "lede", text: cfg.none }));
     return box;
   }
 
@@ -372,16 +378,18 @@
     const dup = live.filter(isDuplicated).length;
     const pct = (n) => total ? Math.max(4, Math.round((n / total) * 100)) : 0;
     const wrap = el("div", { class: "figures" });
+    // A stat card with a count becomes a one-click filter to those items.
+    const filterFig = (fig, n, kind, color) => {
+      if (n <= 0) return fig;
+      fig.classList.add("clickable");
+      fig.title = "Show only these";
+      fig.addEventListener("click", () => { focus = kind; render(); });
+      fig.appendChild(el("div", { class: "figlink", text: "Filter to these →", style: "color:" + color }));
+      return fig;
+    };
     wrap.appendChild(figure("Tracked", total, null, "ink", 100, "saved in plain files"));
-    const cf = figure("Committed to git", committed, committed ? ["bad", "Leak"] : ["ok", "Clear"], "red", pct(committed), committed ? "may be pushed somewhere" : "none in history");
-    if (committed > 0) {
-      cf.classList.add("clickable");
-      cf.title = "Show only the committed-to-git secrets";
-      cf.addEventListener("click", () => { committedOnly = true; render(); });
-      cf.appendChild(el("div", { class: "figlink", text: "Filter to these →" }));
-    }
-    wrap.appendChild(cf);
-    wrap.appendChild(figure("In 2+ places", dup, dup ? ["warn", "Action"] : ["ok", "Good"], "amber", pct(dup), "easy to lose track of"));
+    wrap.appendChild(filterFig(figure("Committed to git", committed, committed ? ["bad", "Leak"] : ["ok", "Clear"], "red", pct(committed), committed ? "may be pushed somewhere" : "none in history"), committed, "committed", "var(--red)"));
+    wrap.appendChild(filterFig(figure("In 2+ places", dup, dup ? ["warn", "Action"] : ["ok", "Good"], "amber", pct(dup), dup ? "the same secret in several files" : "no duplicates"), dup, "dup", "var(--amber)"));
     return wrap;
   }
   function figure(label, n, badge, barColor, barPct, sub) {
@@ -1151,7 +1159,7 @@
   // ---- boot ------------------------------------------------------------
   document.getElementById("scope-btn").addEventListener("click", openScopePanel);
   document.getElementById("tour-btn").addEventListener("click", startWalkthrough);
-  document.getElementById("search").addEventListener("input", (e) => { searchQ = e.target.value.trim().toLowerCase(); committedOnly = false; render(); });
+  document.getElementById("search").addEventListener("input", (e) => { searchQ = e.target.value.trim().toLowerCase(); focus = null; render(); });
   document.addEventListener("keydown", (e) => { if (e.key !== "Escape") return; if (modalRoot.firstChild) closeModal(); else if (selectedId) closeDrawer(); });
   wireTheme(); wireViewToggle(); loadSecrets(); startEvents(); startHeartbeat();
 })();
