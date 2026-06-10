@@ -185,7 +185,43 @@ func isPlaceholder(v string) bool {
 	if len(v) >= 12 && shannon(v) < 2.0 {
 		return true
 	}
-	return false
+	// Fake/demo values under a secret-y key (GITHUB_TOKEN=ghp_FakeToken…,
+	// SIGNING_KEY=your-signing-key). These don't match any credential rule, but
+	// keyLooksSecret would still promote them — catch them here first.
+	return looksFakeValue(v)
+}
+
+// fakeWords are obvious non-secret markers; if one appears in the value it's a
+// demo/placeholder, not a live credential.
+var fakeWords = []string{
+	"fake", "dummy", "example", "sample", "placeholder", "changeme", "change-me",
+	"redacted", "your-", "your_", "yourkey", "todo", "insert-", "replace-me",
+	"replaceme", "notreal", "specimen", "test-key", "test_key",
+}
+
+// reSlug matches an all-lowercase, hyphen/underscore-separated slug
+// (local-secret, sk-fake-openai-key-12345, projectcare-ai-super-secret-key-2024).
+// Real tokens are one long high-entropy run, usually mixed-case — never a tidy
+// run of dictionary words.
+var reSlug = regexp.MustCompile(`^[a-z0-9]+(?:[-_][a-z0-9]+)+$`)
+
+func looksFakeValue(v string) bool {
+	lv := strings.ToLower(v)
+	for _, w := range fakeWords {
+		if strings.Contains(lv, w) {
+			return true
+		}
+	}
+	if !reSlug.MatchString(v) {
+		return false
+	}
+	// All segments are short, word-like — not a 20+ char random token chunk.
+	for _, seg := range strings.FieldsFunc(v, func(r rune) bool { return r == '-' || r == '_' }) {
+		if len(seg) > 16 {
+			return false
+		}
+	}
+	return true
 }
 
 // exampleMarkers identify documentation/template env files by filename.

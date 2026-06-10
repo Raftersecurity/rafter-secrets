@@ -94,6 +94,17 @@ func TestClassify_ExamplesAndPlaceholders(t *testing.T) {
 		// ...but a real high-entropy token in a real .env is still a secret.
 		{"HF_TOKEN", tok("hf_", 34), "envfile", "/p/.env", KindSecret},
 		{"STRIPE_KEY", tok("sk_live_", 28), "envfile", "/p/.env", KindSecret},
+		// Fake/demo values under a secret-y key name — the key name must NOT
+		// promote an obviously-fake value (these match no credential rule).
+		{"SUPER_SECRET", "projectcare-ai-super-secret-key-2024", "envfile", "/p/.env", KindEnv},
+		{"GITHUB_TOKEN", "ghp_FakeGithubPackagesToken000", "envfile", "/p/.env", KindEnv},
+		{"NPM_TOKEN", "npm_FakeToken123abc456def789ghi", "envfile", "/p/.env", KindEnv},
+		{"GH_TOKEN", "ghp_quoted_token_value", "envfile", "/p/.env", KindEnv},
+		{"OPENAI_API_KEY", "sk-fake-openai-key-12345", "envfile", "/p/.env", KindEnv},
+		{"SIGNING_KEY", "your-signing-key", "envfile", "/p/.env", KindEnv},
+		{"APP_SECRET", "local-secret", "envfile", "/p/.env", KindEnv},
+		{"APP_SECRET", "prod-secret", "envfile", "/p/.env", KindEnv},
+		{"STRIPE_SECRET_KEY", "sk_test_emergent", "envfile", "/p/.env", KindEnv},
 	}
 	for _, c := range cases {
 		if got := Classify(c.key, c.val, c.src, c.path); got != c.want {
