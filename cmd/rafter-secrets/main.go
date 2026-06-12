@@ -128,7 +128,7 @@ func main() {
 		EditEngine: func() *edit.Engine {
 			var roots []string
 			store.Read(func(g *storage.Global) { roots = append(roots, g.ScanConfig.Roots...) })
-			return edit.New(filepath.Dir(storePath), canonRoots(roots))
+			return edit.New(filepath.Dir(storePath), editBoundary(roots))
 		},
 	})
 	if err != nil {
@@ -166,7 +166,7 @@ func main() {
 	// without restarting.
 	// Exclude the Rafter Secrets store directory itself from the watcher; if a
 	// scan root is set to $HOME (the spec default), the store-save
-	// landing under ~/.config/Rafter Secrets would otherwise re-fire the
+	// landing under ~/.config/rafter-secrets would otherwise re-fire the
 	// watcher and loop forever.
 	storeDir := filepath.Dir(storePath)
 	wch, wchErr := watch.NewWithConfig(watch.Config{

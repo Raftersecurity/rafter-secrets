@@ -75,6 +75,8 @@
   .watching { display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); font-size: 12.5px; white-space: nowrap; }
   .watching .live { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 0 var(--green-line); animation: pulse 2.6s infinite; }
   .watching.scanning .live { background: var(--amber); animation: pulse 1s infinite; }
+  .watching.stopped { color: var(--red); border-color: var(--red); }
+  .watching.stopped .live { background: var(--red); animation: none; box-shadow: none; }
   @keyframes pulse { 0%{box-shadow:0 0 0 0 var(--green-line)} 70%{box-shadow:0 0 0 6px transparent} 100%{box-shadow:0 0 0 0 transparent} }
 
   /* page shell + hero */

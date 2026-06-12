@@ -47,6 +47,15 @@ func dispatchCLI(args []string) (code int, ok bool) {
 	}
 	fn, found := subcommands[args[0]]
 	if !found {
+		// A leading flag (-x/--x) is a serve-mode option — fall through to the
+		// UI launch path so flag.Parse handles it. A leading non-flag token,
+		// though, is meant to be a command; if it isn't one, it's a typo. Fail
+		// loudly instead of silently launching the web app (which looks like
+		// the command was accepted).
+		if !strings.HasPrefix(args[0], "-") {
+			fmt.Fprintf(os.Stderr, "rafter-secrets: unknown command %q\nRun 'rafter-secrets --help' to see the available commands.\n", args[0])
+			return 2, true
+		}
 		return 0, false
 	}
 	return fn(args[1:]), true
@@ -134,7 +143,7 @@ func loadEnv(jsonOut bool) (*cliEnv, error) {
 }
 
 func (e *cliEnv) engine() *edit.Engine {
-	return edit.New(filepath.Dir(e.storePath), canonRoots(e.doc.ScanConfig.Roots))
+	return edit.New(filepath.Dir(e.storePath), editBoundary(e.doc.ScanConfig.Roots))
 }
 
 // findSecret resolves a key (or --id) to a single secret. It errors with a
@@ -192,6 +201,27 @@ func canonRoots(in []string) []string {
 	return out
 }
 
+// editBoundary is the symlink-escape allowlist handed to edit.New. It is the
+// canonicalised scan roots — but it must NEVER be empty: edit.resolveTarget
+// treats an empty roots list as "boundary disabled" (a test-only affordance),
+// so if every configured root failed to canonicalise (e.g. a root was deleted
+// or renamed) the engine would edit with no path boundary at all — fail-open.
+// Fall back to the user's home directory so a real symlink-escape is always
+// refused; only if home itself can't be resolved do we surface the empty
+// (disabled) set, which is no worse than the prior behaviour.
+func editBoundary(roots []string) []string {
+	if canon := canonRoots(roots); len(canon) > 0 {
+		return canon
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		if real, err := filepath.EvalSymlinks(home); err == nil {
+			return []string{real}
+		}
+		return []string{home}
+	}
+	return nil
+}
+
 // rescanAfterEdit re-scans and persists so the inventory reflects the new
 // values. Best-effort: an edit already succeeded; a stale store self-heals
 // on the next scan.
@@ -244,7 +274,9 @@ func cmdScan(args []string) int {
 	if err != nil {
 		return fail(*jsonOut, 1, err.Error())
 	}
-	_ = storage.Save(env.storePath, env.doc)
+	if err := storage.Save(env.storePath, env.doc); err != nil {
+		return fail(*jsonOut, 1, "scan finished but couldn't save the inventory: "+err.Error())
+	}
 	if *jsonOut {
 		return emit(map[string]any{"ok": true, "files_scanned": res.FilesScanned, "secrets": len(env.doc.Secrets)})
 	}
@@ -340,6 +372,9 @@ func cmdReveal(args []string) int {
 	if perr != nil {
 		return 2
 	}
+	if len(pos) < 1 && *id == "" {
+		return fail(*jsonOut, 2, "usage: rafter-secrets reveal <key>")
+	}
 	env, err := loadEnv(*jsonOut)
 	if err != nil {
 		return fail(*jsonOut, 1, err.Error())
@@ -420,6 +455,8 @@ func reportSecure(jsonOut bool, res *edit.Result) int {
 	}
 	if !res.Applied {
 		fmt.Println("\nPreview only. Re-run with --yes to apply.")
+	} else if res.Warning != "" {
+		fmt.Printf("\nDone — other apps and users can no longer read these.\nNote: %s\n", res.Warning)
 	} else {
 		fmt.Printf("\nDone — other apps and users can no longer read these. Undo with: rafter-secrets undo %s\n", res.OpID)
 	}
@@ -603,6 +640,8 @@ func reportEdit(jsonOut bool, res *edit.Result) int {
 	}
 	if !res.Applied {
 		fmt.Println("\nPreview only. Re-run with --yes to apply.")
+	} else if res.Warning != "" {
+		fmt.Printf("\nDone.\nNote: %s\n", res.Warning)
 	} else {
 		fmt.Printf("\nDone. Undo with: rafter-secrets undo %s\n", res.OpID)
 	}

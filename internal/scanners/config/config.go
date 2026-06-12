@@ -24,10 +24,17 @@ import (
 	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 )
 
+// maxConfigFileSize bounds how much of a credential config file this
+// package will read into memory. Real AWS/npm/docker/gh/Claude config
+// files are kilobytes; a multi-GB file with one of those names is junk
+// (or an attempt to OOM the scanner), so skip it rather than slurp it.
+const maxConfigFileSize = 8 * 1024 * 1024 // 8 MiB
+
 // readSourceFile is the shared "open + stat + slurp" used by every
 // scanner in this package. Returns (nil, nil) on missing path so
 // callers can probe optional config files without per-scanner
-// errors.Is checks.
+// errors.Is checks, and also returns (nil, nil) for a file larger than
+// maxConfigFileSize (too big to be a real credential file — skip it).
 func readSourceFile(path string) (body []byte, perms string, err error) {
 	f, err := os.OpenFile(path, os.O_RDONLY, 0)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -41,7 +48,12 @@ func readSourceFile(path string) (body []byte, perms string, err error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("stat %s: %w", path, err)
 	}
-	body, err = io.ReadAll(f)
+	if st.Size() > maxConfigFileSize {
+		return nil, "", nil // implausibly large for a credential file — skip
+	}
+	// Cap the read defensively even though Stat passed: the file could grow
+	// between Stat and ReadAll, and LimitReader keeps the allocation bounded.
+	body, err = io.ReadAll(io.LimitReader(f, maxConfigFileSize))
 	if err != nil {
 		return nil, "", fmt.Errorf("read %s: %w", path, err)
 	}

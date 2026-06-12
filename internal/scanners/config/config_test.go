@@ -211,3 +211,30 @@ func TestScanner_MissingFileNoError_Config(t *testing.T) {
 		}
 	}
 }
+
+// TestReadSourceFile_SizeCap verifies an implausibly large credential file is
+// skipped (returned as no body) rather than slurped whole — the OOM guard.
+func TestReadSourceFile_SizeCap(t *testing.T) {
+	dir := t.TempDir()
+
+	big := filepath.Join(dir, "huge.json")
+	if err := os.WriteFile(big, make([]byte, maxConfigFileSize+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	body, _, err := readSourceFile(big)
+	if err != nil {
+		t.Fatalf("oversized file: err = %v, want nil", err)
+	}
+	if body != nil {
+		t.Fatalf("oversized file: got %d bytes, want nil (skipped)", len(body))
+	}
+
+	small := filepath.Join(dir, "ok.json")
+	if err := os.WriteFile(small, []byte(`{"a":"b"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	body, _, err = readSourceFile(small)
+	if err != nil || body == nil {
+		t.Fatalf("normal file: body=%v err=%v, want non-nil body, nil err", body, err)
+	}
+}

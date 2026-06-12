@@ -92,7 +92,7 @@ func (s *Server) handleSecretReveal(w http.ResponseWriter, r *http.Request) {
 	var req revealRequest
 	// Body is optional. A missing/empty body → default source index.
 	if r.ContentLength > 0 {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := decodeJSON(w, r, &req); err != nil {
 			writeJSONErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 			return
 		}
@@ -189,7 +189,7 @@ func (s *Server) handleSecretAnnotate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var p annotationPatch
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+	if err := decodeJSON(w, r, &p); err != nil {
 		writeJSONErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
@@ -284,6 +284,20 @@ func (s *Server) handleSecretMarkRotated(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// maxJSONBody caps request bodies on the JSON API. Secrets-management
+// payloads are tiny (a key, a handful of annotation fields), so anything
+// larger is a mistake or abuse; cap it before json.Decode allocates so a
+// same-origin script can't exhaust memory with a giant/streaming body.
+const maxJSONBody = 1 << 20 // 1 MiB
+
+// decodeJSON decodes a JSON request body with a hard size cap. It wraps
+// r.Body in a MaxBytesReader (which also bounds chunked bodies whose
+// Content-Length is unknown) before decoding.
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
+	return json.NewDecoder(r.Body).Decode(v)
 }
 
 // writeJSONErr writes a small {"error": "..."} envelope at the given

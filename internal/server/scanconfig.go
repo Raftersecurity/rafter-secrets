@@ -80,7 +80,7 @@ func (s *Server) handleScanConfigUpdate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var p scanConfigPatch
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+	if err := decodeJSON(w, r, &p); err != nil {
 		writeJSONErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}

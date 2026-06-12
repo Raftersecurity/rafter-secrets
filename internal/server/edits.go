@@ -48,7 +48,7 @@ func (s *Server) handleOpenFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req openRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		writeJSONErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
@@ -165,7 +165,7 @@ func (s *Server) handleSecretSecure(w http.ResponseWriter, r *http.Request) {
 	}
 	var req secureRequest
 	if r.ContentLength > 0 {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := decodeJSON(w, r, &req); err != nil {
 			writeJSONErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 			return
 		}
@@ -228,7 +228,7 @@ func (s *Server) handleUndo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req undoRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		writeJSONErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
@@ -266,7 +266,7 @@ func (s *Server) handleSecureAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var req secureRequest
 	if r.ContentLength > 0 {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := decodeJSON(w, r, &req); err != nil {
 			writeJSONErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 			return
 		}

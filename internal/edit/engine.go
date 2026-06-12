@@ -46,6 +46,11 @@ type Result struct {
 	Key     string   `json:"key"`
 	Applied bool     `json:"applied"`
 	Changes []Change `json:"changes"`
+	// Warning is a non-fatal caveat about an applied operation — e.g. the
+	// edit succeeded but its undo record couldn't be saved, so it can't be
+	// auto-undone. Empty on success and on previews. Callers should surface
+	// it instead of unconditionally promising "undo with ...".
+	Warning string `json:"warning,omitempty"`
 }
 
 // Engine performs the only writes Rafter Secrets ever makes to user files.
@@ -105,8 +110,9 @@ const secureMode = os.FileMode(0o600)
 //
 // This is the "fix it for me" behind a world-readable secret. It lives in the
 // edit engine (the only writer), so it is path-checked, audited, and undoable
-// like every other write — and it stays a deliberate CLI/agent action, never a
-// web-server endpoint.
+// like every other write. It is reachable from both the CLI (`secure`) and the
+// web app (POST /api/secrets/{id}/secure, /api/secure-all) — permission-only
+// changes are reversible, so unlike value edits they are safe to expose there.
 func (e *Engine) Secure(key string, targets []Target, apply bool) (*Result, error) {
 	if len(targets) == 0 {
 		return nil, errors.New("no target files")
@@ -152,7 +158,9 @@ func (e *Engine) Secure(key string, targets []Target, apply bool) (*Result, erro
 		done = append(done, p)
 	}
 	if err := e.writeManifest(man); err != nil {
-		_ = err // mode is changed; a missing manifest only costs undo
+		// Modes are changed; a missing manifest only costs undo. Tell the
+		// caller so it doesn't promise an undo that won't work.
+		res.Warning = "permissions were changed, but the undo record couldn't be saved — this change can't be auto-undone"
 	}
 	e.audit(man, "ok")
 	_ = e.pruneBackups()
@@ -250,8 +258,9 @@ func (e *Engine) run(opName string, action op, key, value, expectOld string, tar
 	}
 	if err := e.writeManifest(man); err != nil {
 		// Files are written + backed up; a missing manifest only costs undo.
-		// Surface it but don't roll back a successful edit.
-		_ = err
+		// Surface it (don't roll back a successful edit) so the caller doesn't
+		// promise an undo the user can't actually perform.
+		res.Warning = "the change was applied, but the undo record couldn't be saved — this edit can't be auto-undone"
 	}
 	e.audit(man, "ok")
 	_ = e.pruneBackups()

@@ -30,6 +30,8 @@
   const revealed = new Map();
   const revealing = new Set(); // ids whose value is being read from disk right now
   let saveTimer = null, saveState = "idle";
+  let firstScanDone = false; // have we seen the initial scan finish? gates the "all clear" empty state
+  let serverDown = false;    // heartbeat/SSE says the local server has stopped
 
   // ---- helpers ---------------------------------------------------------
   function el(tag, attrs, kids) {
@@ -235,7 +237,9 @@
   // ---- render ----------------------------------------------------------
   function render() {
     clear(content);
-    if (state.secrets.length === 0) { content.appendChild(renderEmpty()); content.appendChild(renderFoot()); return; }
+    // Before the first scan finishes, an empty inventory means "still looking",
+    // NOT "all clear" — showing the verdict early is a false all-clear on first run.
+    if (state.secrets.length === 0) { content.appendChild(firstScanDone ? renderEmpty() : renderScanning()); content.appendChild(renderFoot()); return; }
 
     content.appendChild(renderLensToggle());
     const pool = lensSecrets().filter(matchesSearch);
@@ -515,6 +519,15 @@
       el("div", { class: "ec", html: ICON.check }),
       el("h3", { text: "Nothing saved in the open." }),
       el("p", { text: "Rafter Secrets didn't find any passwords or keys in plain files. It keeps watching as files change." }),
+    ]);
+  }
+  // Shown while the very first scan is still running, so an empty list reads as
+  // "looking" rather than a premature all-clear.
+  function renderScanning() {
+    return el("div", { class: "empty" }, [
+      el("div", { class: "ec", html: ICON.shield }),
+      el("h3", { text: "Looking through your files…" }),
+      el("p", { text: "Rafter is scanning the folders you chose for secrets sitting in plain text. The first pass can take a moment." }),
     ]);
   }
   function renderFoot() {
@@ -991,9 +1004,44 @@
   function safeUrl(u) { if (!u) return null; try { const p = new URL(u, location.href); return (p.protocol === "http:" || p.protocol === "https:") ? p.href : null; } catch (_) { return null; } }
 
   // ---- live + chrome ---------------------------------------------------
-  function startEvents() { const es = new EventSource("/api/events"); ["secret_created", "secret_refreshed", "secret_drifted"].forEach((t) => es.addEventListener(t, () => loadSecrets())); es.addEventListener("scan_started", () => setScanning(true)); es.addEventListener("scan_complete", () => { setScanning(false); loadSecrets(); }); es.onerror = () => {}; }
-  function setScanning(on) { scanStatus.classList.toggle("scanning", on); scanStatusText.textContent = on ? "checking…" : "watching for changes"; }
-  function startHeartbeat() { setInterval(() => { fetch("/api/heartbeat", { method: "POST", credentials: "same-origin" }).catch(() => {}); }, 30000); window.addEventListener("pagehide", () => navigator.sendBeacon("/api/close")); }
+  function startEvents() {
+    const es = new EventSource("/api/events");
+    ["secret_created", "secret_refreshed", "secret_drifted"].forEach((t) => es.addEventListener(t, () => loadSecrets()));
+    es.addEventListener("scan_started", () => setScanning(true));
+    es.addEventListener("scan_complete", () => { firstScanDone = true; setScanning(false); loadSecrets(); });
+    es.onopen = () => setServerDown(false);
+    // An SSE error is often just a transient reconnect — confirm with a
+    // heartbeat probe rather than silently pretending all is well.
+    es.onerror = () => probeLiveness();
+  }
+  function setScanning(on) {
+    if (serverDown) return; // don't claim "watching" when the server is gone
+    scanStatus.classList.toggle("scanning", on);
+    scanStatusText.textContent = on ? "checking…" : "watching for changes";
+  }
+  // setServerDown swaps the header pill to an honest "stopped" state instead of
+  // a green "watching" pulse the (dead) server can no longer back up.
+  function setServerDown(down) {
+    if (serverDown === down) return;
+    serverDown = down;
+    scanStatus.classList.toggle("stopped", down);
+    if (down) { scanStatus.classList.remove("scanning"); scanStatusText.textContent = "Rafter has stopped — run rafter-secrets again"; }
+    else setScanning(false);
+  }
+  function probeLiveness() {
+    return fetch("/api/heartbeat", { method: "POST", credentials: "same-origin" })
+      .then((r) => setServerDown(!r.ok))
+      .catch(() => setServerDown(true));
+  }
+  function startHeartbeat() {
+    probeLiveness(); // assert liveness immediately on (re)load — a refresh cancels a pending close-beacon
+    setInterval(probeLiveness, 30000);
+    // A page entering the bfcache (back/forward) may be restored live, so only
+    // signal "closing" on a real teardown. On reload this still fires, but the
+    // reloaded page's immediate heartbeat cancels the close server-side.
+    window.addEventListener("pagehide", (e) => { if (!e.persisted) navigator.sendBeacon("/api/close"); });
+    window.addEventListener("pageshow", (e) => { if (e.persisted) probeLiveness(); });
+  }
   function wireTheme() {
     const saved = localStorage.getItem("rafter.theme");
     if (saved === "light" || saved === "dark") document.documentElement.dataset.theme = saved;
@@ -1121,4 +1169,7 @@
   document.getElementById("search").addEventListener("input", (e) => { searchQ = e.target.value.trim().toLowerCase(); focus = null; render(); });
   document.addEventListener("keydown", (e) => { if (e.key !== "Escape") return; if (modalRoot.firstChild) closeModal(); else if (selectedId) closeDrawer(); });
   wireTheme(); wireViewToggle(); loadSecrets(); startEvents(); startHeartbeat();
+  // Fallback: if no scan_complete arrives (e.g. the watcher/rescanner failed to
+  // start), stop showing "Looking…" forever — fall back to the normal verdict.
+  setTimeout(() => { if (!firstScanDone) { firstScanDone = true; render(); } }, 8000);
 })();

@@ -92,7 +92,7 @@ func (b *Bus) Subscribe(ctx context.Context) (<-chan Event, *SubscriberHandle) {
 		}
 		b.mu.Unlock()
 	}()
-	return s.ch, &SubscriberHandle{s: s}
+	return s.ch, &SubscriberHandle{b: b, s: s}
 }
 
 // Publish delivers e to every current subscriber. Subscribers whose
@@ -123,14 +123,19 @@ func (b *Bus) SubscriberCount() int {
 
 // SubscriberHandle exposes per-subscription diagnostics.
 type SubscriberHandle struct {
+	b *Bus
 	s *subscriber
 }
 
 // DroppedEvents returns the number of events dropped for this
-// subscriber because its channel was full at publish time.
+// subscriber because its channel was full at publish time. It reads
+// s.dropped under the bus lock — the same lock Publish increments it
+// under — so concurrent Publish/DroppedEvents is race-free.
 func (h *SubscriberHandle) DroppedEvents() int {
 	if h == nil || h.s == nil {
 		return 0
 	}
+	h.b.mu.Lock()
+	defer h.b.mu.Unlock()
 	return h.s.dropped
 }
