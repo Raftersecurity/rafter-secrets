@@ -29,9 +29,16 @@ curl -fsSL https://raftersecurity.github.io/rafter-secrets/install.sh | sh
 rafter-secrets
 ```
 
+Or with [Homebrew](https://brew.sh) (macOS & Linux):
+
+```bash
+brew install raftersecurity/tap/rafter-secrets
+rafter-secrets
+```
+
 That opens a local web app in your browser. No account, no telemetry — nothing
-ever leaves your machine. (Homebrew tap coming soon. Prefer to pick the binary
-yourself? See [Install manually](#install-manually).)
+ever leaves your machine. (Prefer to pick the binary yourself? See
+[Install manually](#install-manually).)
 
 ---
 

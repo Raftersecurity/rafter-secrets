@@ -2,26 +2,25 @@
 
 Canonical Homebrew formula for Rafter Secrets, plus how it reaches users.
 
-## One-time setup (human — needs org permission)
+## Status: live
 
-The tap install command is:
+The tap is published at **`Raftersecurity/homebrew-tap`** (public), seeded with
+`Formula/rafter-secrets.rb` at v0.3.0 and verified end-to-end:
 
 ```sh
 brew install raftersecurity/tap/rafter-secrets
 ```
 
-…which resolves to the repo **`Raftersecurity/homebrew-tap`**. That repo does
-not exist yet and must be created by someone with repo-create permission on the
-`Raftersecurity` org (a regular member without that permission gets
-`cannot create a repository for Raftersecurity`). To create it:
+The tap is a shared repo for the whole Rafter family — add more formulae (e.g.
+the Rafter CLI) as `Formula/<name>.rb` in the same repo; users then run
+`brew install raftersecurity/tap/<name>`.
+
+To re-seed from scratch (if ever needed):
 
 ```sh
-gh repo create Raftersecurity/homebrew-tap --public \
-  --description "Homebrew tap for Rafter Secrets"
-# then seed it:
 mkdir -p tap/Formula && cp rafter-secrets.rb tap/Formula/
 cd tap && git init -q && git add -A \
-  && git commit -q -m "Add rafter-secrets formula at v0.3.0" \
+  && git commit -q -m "Add rafter-secrets formula" \
   && git branch -M main \
   && git remote add origin https://github.com/Raftersecurity/homebrew-tap \
   && git push -u origin main
