@@ -68,7 +68,7 @@ Rafter Secrets is the inventory and hygiene tool for that problem:
 
 ## Install manually
 
-Most people should use the one-line installer under
+Most people should use the one-line installer or Homebrew under
 [Get it running](#get-it-running). If you'd rather pick the binary yourself:
 
 **Prebuilt binary — no toolchain needed.** Download the asset for your OS/arch

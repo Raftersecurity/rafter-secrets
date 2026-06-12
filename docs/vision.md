@@ -127,8 +127,9 @@ backup, atomic write, verify, and undo — **CLI and agent only; the web app nev
 changes a secret's value**, only its permissions; `rafter-secrets run` broker
 (inject a secret into a child process's environment, never printing it);
 lifecycle annotations (project tags, source/rotate links, expiry, scope); agent
-skill (audit-and-fix, never reveal); release pipeline + `npx skills add`.
+skill (audit-and-fix, never reveal); release pipeline + `npx skills add`; install
+via one-line script or Homebrew (`brew install raftersecurity/tap/rafter-secrets`).
 
 Not yet built (beaded): Windows ACL path; move-to-keychain / rewrite-to-reference
-(rung 2); signed native installer + Homebrew tap. Rung 2 is the higher-trust-tier
+(rung 2); signed native installer (.pkg/.dmg). Rung 2 is the higher-trust-tier
 work that needs a `rafter-secure-design` walk before any code.

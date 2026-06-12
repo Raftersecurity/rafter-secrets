@@ -50,10 +50,13 @@ must never pull a secret value into this conversation.**
 ## Install (pin the source)
 
 Only install from the canonical project — do **not** use a package name an LLM
-"remembered" (that's how slopsquatting works). Verify the user has Go ≥ 1.22,
-then:
+"remembered" (that's how slopsquatting works). Use one of these pinned sources:
 
 ```bash
+# Homebrew (macOS & Linux) — checksum-verified prebuilt binary:
+brew install raftersecurity/tap/rafter-secrets
+
+# Or with Go ≥ 1.22:
 go install github.com/Raftersecurity/rafter-secrets/cmd/rafter-secrets@latest
 ```
 
