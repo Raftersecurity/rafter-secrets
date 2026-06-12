@@ -31,6 +31,7 @@
   const revealing = new Set(); // ids whose value is being read from disk right now
   let saveTimer = null, saveState = "idle";
   let firstScanDone = false; // have we seen the initial scan finish? gates the "all clear" empty state
+  let sawScanActivity = false; // have we seen ANY scan_started/scan_complete frame yet?
   let serverDown = false;    // heartbeat/SSE says the local server has stopped
 
   // ---- helpers ---------------------------------------------------------
@@ -622,16 +623,6 @@
       },
     });
   }
-  function renderLockAllBanner(n) {
-    return el("div", { class: "lockall" }, [
-      el("span", { class: "ci", html: ICON.shield }),
-      el("div", { class: "lockall-txt" }, [
-        el("div", { class: "lockall-h", text: n + " secret" + (n > 1 ? "s are" : " is") + " readable by other accounts on this computer" }),
-        el("div", { class: "lockall-s", text: "Make them private to you — previewed first, and undoable." }),
-      ]),
-      el("button", { class: "btn primary", onclick: secureAllFix, text: "Lock them all down" }),
-    ]);
-  }
 
   // ---- first-run walkthrough -------------------------------------------
   // The comprehension layer: three must-see screens (what's here · what's a
@@ -995,8 +986,6 @@
   function prettyPath(p) { if (!p) return ""; const h = state.scan_home; return (h && p.indexOf(h) === 0) ? "~" + p.slice(h.length) : p; }
   function dirOf(p) { const i = p.lastIndexOf("/"); return i > 0 ? p.slice(0, i) : p; }
   function splitPath(p) { const s = prettyPath(p); const i = s.lastIndexOf("/"); return { dir: i >= 0 ? s.slice(0, i + 1) : "", base: i >= 0 ? s.slice(i + 1) : s }; }
-  function spell(n) { return ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve"][n] || String(n); }
-  function cap(s) { return s; }
   function copy(t, m) { const d = () => setToast(m || "Copied"); if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(d).catch(() => fb(t, d)); else fb(t, d); }
   function fb(t, d) { const ta = el("textarea", { style: "position:fixed;opacity:0" }); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); d(); } catch (_) { setToast("Couldn't copy", true); } document.body.removeChild(ta); }
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
@@ -1007,8 +996,8 @@
   function startEvents() {
     const es = new EventSource("/api/events");
     ["secret_created", "secret_refreshed", "secret_drifted"].forEach((t) => es.addEventListener(t, () => loadSecrets()));
-    es.addEventListener("scan_started", () => setScanning(true));
-    es.addEventListener("scan_complete", () => { firstScanDone = true; setScanning(false); loadSecrets(); });
+    es.addEventListener("scan_started", () => { sawScanActivity = true; setScanning(true); });
+    es.addEventListener("scan_complete", () => { sawScanActivity = true; firstScanDone = true; setScanning(false); loadSecrets(); });
     es.onopen = () => setServerDown(false);
     // An SSE error is often just a transient reconnect — confirm with a
     // heartbeat probe rather than silently pretending all is well.
@@ -1169,7 +1158,9 @@
   document.getElementById("search").addEventListener("input", (e) => { searchQ = e.target.value.trim().toLowerCase(); focus = null; render(); });
   document.addEventListener("keydown", (e) => { if (e.key !== "Escape") return; if (modalRoot.firstChild) closeModal(); else if (selectedId) closeDrawer(); });
   wireTheme(); wireViewToggle(); loadSecrets(); startEvents(); startHeartbeat();
-  // Fallback: if no scan_complete arrives (e.g. the watcher/rescanner failed to
-  // start), stop showing "Looking…" forever — fall back to the normal verdict.
-  setTimeout(() => { if (!firstScanDone) { firstScanDone = true; render(); } }, 8000);
+  // Degraded-mode fallback ONLY: if no scan ever even started (e.g. the
+  // watcher/rescanner failed to come up, so no scan_started/scan_complete will
+  // ever arrive), stop showing "Looking…" forever. If a scan DID start, we keep
+  // waiting for its scan_complete — never flip to "all clear" mid-scan.
+  setTimeout(() => { if (!firstScanDone && !sawScanActivity) { firstScanDone = true; render(); } }, 8000);
 })();

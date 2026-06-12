@@ -46,11 +46,6 @@ type Result struct {
 	Key     string   `json:"key"`
 	Applied bool     `json:"applied"`
 	Changes []Change `json:"changes"`
-	// Warning is a non-fatal caveat about an applied operation — e.g. the
-	// edit succeeded but its undo record couldn't be saved, so it can't be
-	// auto-undone. Empty on success and on previews. Callers should surface
-	// it instead of unconditionally promising "undo with ...".
-	Warning string `json:"warning,omitempty"`
 }
 
 // Engine performs the only writes Rafter Secrets ever makes to user files.
@@ -140,27 +135,37 @@ func (e *Engine) Secure(key string, targets []Target, apply bool) (*Result, erro
 		return res, nil // nothing to do, or preview only
 	}
 
-	// Apply, recording the prior mode so Undo can put it back. No content
-	// backup is needed — contents never change — so manifest.Backup stays "".
+	// Record the prior mode so Undo can put it back. No content backup is
+	// needed — contents never change — so manifest.Backup stays "". Write the
+	// manifest BEFORE touching any mode, so an undo record always exists the
+	// moment we start changing permissions.
 	man := manifest{OpID: res.OpID, Op: "secure", Key: key, Time: e.now()}
+	for _, p := range preps {
+		man.Entries = append(man.Entries, manifestEntry{Path: p.realPath, Mode: p.oldMode})
+	}
+	if err := e.writeManifest(man); err != nil {
+		_ = e.discardOp(res.OpID)
+		return nil, fmt.Errorf("couldn't record the operation, nothing changed: %w", err)
+	}
+
 	done := []prep{}
-	rollback := func() {
+	rollback := func() error {
+		var firstErr error
 		for _, p := range done {
-			_ = os.Chmod(p.realPath, p.oldMode)
+			if err := os.Chmod(p.realPath, p.oldMode); err != nil && firstErr == nil {
+				firstErr = err
+			}
 		}
+		return firstErr
 	}
 	for _, p := range preps {
 		if err := os.Chmod(p.realPath, secureMode); err != nil {
-			rollback()
-			return nil, fmt.Errorf("chmod %s failed, rolled back: %w", p.realPath, err)
+			if rbErr := rollback(); rbErr != nil {
+				return nil, fmt.Errorf("couldn't lock %s and automatic rollback was incomplete — restore with: rafter-secrets undo %s (cause: %w)", p.realPath, res.OpID, err)
+			}
+			return nil, fmt.Errorf("couldn't lock %s, rolled back — nothing changed: %w", p.realPath, err)
 		}
-		man.Entries = append(man.Entries, manifestEntry{Path: p.realPath, Mode: p.oldMode})
 		done = append(done, p)
-	}
-	if err := e.writeManifest(man); err != nil {
-		// Modes are changed; a missing manifest only costs undo. Tell the
-		// caller so it doesn't promise an undo that won't work.
-		res.Warning = "permissions were changed, but the undo record couldn't be saved — this change can't be auto-undone"
 	}
 	e.audit(man, "ok")
 	_ = e.pruneBackups()
@@ -235,32 +240,46 @@ func (e *Engine) run(opName string, action op, key, value, expectOld string, tar
 		return res, nil // preview only
 	}
 
-	// Phase 2: back up everything, then write. On a write failure, roll back.
+	// Phase 2 is all-or-nothing in three steps:
+	//   2a. back up every target (no writes yet),
+	//   2b. record the manifest BEFORE mutating anything, so a usable undo
+	//       record always exists the moment any file changes, and
+	//   2c. write every candidate, rolling back on the first failure.
 	man := manifest{OpID: res.OpID, Op: opName, Key: key, Time: e.now()}
-	written := []prepared{}
-	rollback := func() {
-		for _, p := range written {
-			_ = atomicWrite(p.realPath, p.orig, p.mode)
-		}
-	}
 	for i, p := range preps {
 		backup, err := e.backup(res.OpID, i, p.realPath, p.orig, p.mode)
 		if err != nil {
-			rollback()
+			_ = e.discardOp(res.OpID) // nothing written yet — drop the partial backups
 			return nil, fmt.Errorf("backup failed, nothing changed: %w", err)
 		}
 		man.Entries = append(man.Entries, manifestEntry{Path: p.realPath, Backup: backup, Mode: p.mode})
-		if err := atomicWrite(p.realPath, p.candidate, p.mode); err != nil {
-			rollback()
-			return nil, fmt.Errorf("write failed, rolled back: %w", err)
-		}
-		written = append(written, p)
 	}
 	if err := e.writeManifest(man); err != nil {
-		// Files are written + backed up; a missing manifest only costs undo.
-		// Surface it (don't roll back a successful edit) so the caller doesn't
-		// promise an undo the user can't actually perform.
-		res.Warning = "the change was applied, but the undo record couldn't be saved — this edit can't be auto-undone"
+		_ = e.discardOp(res.OpID)
+		return nil, fmt.Errorf("couldn't record the operation, nothing changed: %w", err)
+	}
+
+	written := []prepared{}
+	rollback := func() error {
+		var firstErr error
+		for _, p := range written {
+			if err := atomicWrite(p.realPath, p.orig, p.mode); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+		return firstErr
+	}
+	for _, p := range preps {
+		if err := atomicWrite(p.realPath, p.candidate, p.mode); err != nil {
+			if rbErr := rollback(); rbErr != nil {
+				// Some files changed and we couldn't fully revert them. The
+				// manifest exists, so undo can recover — say so honestly rather
+				// than claiming "rolled back".
+				return nil, fmt.Errorf("write failed and automatic rollback was incomplete — some files may be partly changed; restore them with: rafter-secrets undo %s (cause: %w)", res.OpID, err)
+			}
+			return nil, fmt.Errorf("write failed, rolled back — nothing changed: %w", err)
+		}
+		written = append(written, p)
 	}
 	e.audit(man, "ok")
 	_ = e.pruneBackups()
@@ -308,10 +327,37 @@ func (e *Engine) backup(opID string, idx int, path string, data []byte, mode os.
 	}
 	name := fmt.Sprintf("%03d-%s.bak", idx, filepath.Base(path))
 	bp := filepath.Join(dir, name)
-	if err := os.WriteFile(bp, data, 0o600); err != nil {
+	// fsync the backup before we let the caller overwrite the original: the
+	// whole point of the backup is to survive a crash, so it must be on disk
+	// (not just page cache) before the only other copy of the bytes is
+	// replaced. Also fsync the directory so the new entry itself is durable.
+	f, err := os.OpenFile(bp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
 		return "", err
 	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return "", err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+	syncDir(dir)
 	return bp, nil
+}
+
+// discardOp removes an aborted operation's backup directory. Used when an
+// operation fails before any user file was changed, so there is nothing to
+// undo and the partial backups would only clutter (and skew pruning).
+func (e *Engine) discardOp(opID string) error {
+	if !validOpID(opID) {
+		return fmt.Errorf("refusing to discard invalid op id %q", opID)
+	}
+	return os.RemoveAll(filepath.Join(e.configDir, "backups", opID))
 }
 
 func (e *Engine) writeManifest(m manifest) error {

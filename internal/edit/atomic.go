@@ -46,7 +46,22 @@ func atomicWrite(path string, data []byte, mode os.FileMode) (err error) {
 	if err = os.Rename(tmpName, path); err != nil {
 		return fmt.Errorf("rename over %s: %w", path, err)
 	}
+	// fsync the directory so the rename itself is durable: without it a crash
+	// just after a "successful" edit can revert the file to its old contents.
+	syncDir(dir)
 	return nil
+}
+
+// syncDir fsyncs a directory so a create/rename within it is durable. Best
+// effort — some filesystems don't support directory fsync, and a failure here
+// only weakens the crash-durability guarantee, never correctness.
+func syncDir(dir string) {
+	d, err := os.Open(dir)
+	if err != nil {
+		return
+	}
+	_ = d.Sync()
+	_ = d.Close()
 }
 
 // resolveTarget resolves a (possibly symlinked) path to the real regular

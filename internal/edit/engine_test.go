@@ -134,6 +134,50 @@ func TestRotateEverywhere_Transaction(t *testing.T) {
 	}
 }
 
+// TestRotate_RollbackOnWriteFailure proves the all-or-nothing guarantee under a
+// real mid-transaction write failure: when the second target's write fails, the
+// first target must be restored to its exact original bytes, and a manifest must
+// exist so the operation is recoverable with undo.
+func TestRotate_RollbackOnWriteFailure(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: a read-only directory wouldn't block writes")
+	}
+	home := t.TempDir()
+	cfg := t.TempDir()
+	eng := New(cfg, nil)
+
+	const orig = "API_KEY=sameval123\n"
+	p1 := writeFile(t, home, "a/.env", orig, 0o600)
+	p2 := writeFile(t, home, "b/.env", orig, 0o600)
+
+	// Make p2's directory read-only so atomicWrite's CreateTemp there fails,
+	// while reads in phase 1 still succeed. Restore perms after so cleanup works.
+	d2 := filepath.Dir(p2)
+	if err := os.Chmod(d2, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(d2, 0o700) })
+
+	_, err := eng.Rotate("API_KEY", []Target{{Path: p1, Line: 1}, {Path: p2, Line: 1}}, "newval999", "sameval123", true)
+	if err == nil {
+		t.Fatal("expected the rotate to fail when target 2 can't be written")
+	}
+
+	if b, _ := os.ReadFile(p1); string(b) != orig {
+		t.Errorf("target 1 not rolled back to original: got %q want %q", b, orig)
+	}
+	if b, _ := os.ReadFile(p2); string(b) != orig {
+		t.Errorf("target 2 should be untouched: got %q want %q", b, orig)
+	}
+
+	// A manifest must exist so the op is recoverable via undo (the bytes are
+	// backed up before any write).
+	matches, _ := filepath.Glob(filepath.Join(cfg, "backups", "*", "manifest.json"))
+	if len(matches) == 0 {
+		t.Error("no manifest written — a partial failure would be unrecoverable by undo")
+	}
+}
+
 func TestShellRotate_InjectionInert(t *testing.T) {
 	home := t.TempDir()
 	eng := New(t.TempDir(), nil)

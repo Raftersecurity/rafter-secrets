@@ -237,6 +237,12 @@ func readValue(valFlag string, stdin io.Reader) (string, error) {
 	if valFlag != "" {
 		return valFlag, nil
 	}
+	// On an interactive terminal, prompt — otherwise the user faces a frozen
+	// cursor with no hint that stdin is being read. (Piped input has no TTY, so
+	// scripts/agents are unaffected.)
+	if f, ok := stdin.(*os.File); ok && isTTY(f) {
+		fmt.Fprintln(os.Stderr, "Paste the value, then press Enter and Ctrl-D:")
+	}
 	b, err := io.ReadAll(io.LimitReader(stdin, 64*1024+1))
 	if err != nil {
 		return "", err
@@ -455,8 +461,6 @@ func reportSecure(jsonOut bool, res *edit.Result) int {
 	}
 	if !res.Applied {
 		fmt.Println("\nPreview only. Re-run with --yes to apply.")
-	} else if res.Warning != "" {
-		fmt.Printf("\nDone — other apps and users can no longer read these.\nNote: %s\n", res.Warning)
 	} else {
 		fmt.Printf("\nDone — other apps and users can no longer read these. Undo with: rafter-secrets undo %s\n", res.OpID)
 	}
@@ -640,8 +644,6 @@ func reportEdit(jsonOut bool, res *edit.Result) int {
 	}
 	if !res.Applied {
 		fmt.Println("\nPreview only. Re-run with --yes to apply.")
-	} else if res.Warning != "" {
-		fmt.Printf("\nDone.\nNote: %s\n", res.Warning)
 	} else {
 		fmt.Printf("\nDone. Undo with: rafter-secrets undo %s\n", res.OpID)
 	}

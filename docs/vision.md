@@ -117,16 +117,18 @@ deliberate **never-reveal** stance.
   what an MCP is, and it contradicts the stance above). Reopen the values
   question only as a deliberate, separate team decision — never via onboarding.
 
-## Status snapshot (2026-06-06)
+## Status snapshot (2026-06-12)
 
-Shipped toward this vision: local web UI + CLI; classifier (Secrets vs
-Environment); exposure detection + in-app **Lock it down** / **Lock them all
-down** (rung 1); in-app **rotate** (local-file rewrite only, points you to the
-provider to revoke); lifecycle annotations (project tags, source/rotate links,
-expiry, scope); agent skill (audit-and-fix, never reveal); release pipeline +
-`npx skills add`.
+Shipped toward this vision: local web UI + CLI; first-run walkthrough; classifier
+(Secrets vs Environment); exposure detection + in-app **Lock it down** / **Lock
+them all down** (rung 1, previewed + reversible); git-committed leak signal +
+not-git-ignored detection; **value edits** (rotate / add / remove) with preview,
+backup, atomic write, verify, and undo — **CLI and agent only; the web app never
+changes a secret's value**, only its permissions; `rafter-secrets run` broker
+(inject a secret into a child process's environment, never printing it);
+lifecycle annotations (project tags, source/rotate links, expiry, scope); agent
+skill (audit-and-fix, never reveal); release pipeline + `npx skills add`.
 
-Not yet built (beaded): the first-run walkthrough; git-committed leak signal;
-Windows ACL path; `rafter-secrets run` broker; move-to-keychain / rewrite-to-
-reference (rung 2). The last two are the higher-trust-tier work that needs a
-`rafter-secure-design` walk before any code.
+Not yet built (beaded): Windows ACL path; move-to-keychain / rewrite-to-reference
+(rung 2); signed native installer + Homebrew tap. Rung 2 is the higher-trust-tier
+work that needs a `rafter-secure-design` walk before any code.

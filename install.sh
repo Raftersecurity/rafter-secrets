@@ -55,15 +55,15 @@ if [ "${RAFTER_SKIP_VERIFY:-}" = "1" ]; then
   echo "rafter-secrets: WARNING — skipping checksum verification (RAFTER_SKIP_VERIFY=1)." >&2
 else
   curl -fSL -o "$tmp/SHA256SUMS" "$BASE/SHA256SUMS" \
-    || fail "could not fetch SHA256SUMS to verify the download (set RAFTER_SKIP_VERIFY=1 to override)."
+    || fail "could not fetch SHA256SUMS to verify the download — retry, or download and verify manually from $BASE."
   want=$(awk -v a="$asset" '$2==a {print $1}' "$tmp/SHA256SUMS")
-  [ -n "$want" ] || fail "no checksum listed for $asset (set RAFTER_SKIP_VERIFY=1 to override)."
+  [ -n "$want" ] || fail "no checksum listed for $asset — retry, or download and verify manually from $BASE."
   if command -v sha256sum >/dev/null 2>&1; then
     got=$(sha256sum "$tmp/$BIN" | awk '{print $1}')
   elif command -v shasum >/dev/null 2>&1; then
     got=$(shasum -a 256 "$tmp/$BIN" | awk '{print $1}')
   else
-    fail "no sha256sum/shasum available to verify the download (set RAFTER_SKIP_VERIFY=1 to override)."
+    fail "no sha256sum/shasum tool available to verify the download — install one and retry."
   fi
   [ "$want" = "$got" ] || fail "checksum mismatch — aborting (expected $want, got $got)."
   echo "rafter-secrets: checksum verified."

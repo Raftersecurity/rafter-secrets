@@ -140,6 +140,13 @@ rafter-secrets list --json
 rafter-secrets show STRIPE_LIVE_KEY
 rafter-secrets reveal STRIPE_LIVE_KEY            # prints the current value
 
+# Use a secret without ever seeing it: inject it into a child process's
+# environment — the value never touches your screen, logs, or an agent's context:
+rafter-secrets run STRIPE_LIVE_KEY -- node server.js
+
+# Lock every copy of a secret to owner-only (chmod 600) — previewed, undoable:
+rafter-secrets secure STRIPE_LIVE_KEY --yes
+
 # Rotate a key everywhere it appears (value piped in, never in argv):
 printf 'sk_live_new…' | rafter-secrets rotate STRIPE_LIVE_KEY            # preview
 printf 'sk_live_new…' | rafter-secrets rotate STRIPE_LIVE_KEY --yes      # apply

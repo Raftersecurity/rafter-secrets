@@ -104,6 +104,9 @@ func (r *Rescanner) Rescan(ctx context.Context) {
 		if r.cfg.OnError != nil {
 			r.cfg.OnError(fmt.Errorf("rescan: scan: %w", runErr))
 		}
+		// Always publish a terminal event, even on failure, so the UI's
+		// scan-in-progress state ("Looking…") resolves instead of hanging.
+		r.cfg.Bus.Publish(eventbus.Event{Type: eventbus.EventScanComplete})
 		return
 	}
 	if saveErr != nil && r.cfg.OnError != nil {
