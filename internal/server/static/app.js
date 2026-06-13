@@ -703,9 +703,9 @@
         el("h1", { text: "That’s the gist." }),
         el("p", { text: "Here’s everything we found on your device — grouped, searchable, and calm. Open any secret to tag it, note where it came from, or get a safe, guided way to replace it." }),
         el("div", { class: "wt-card" }, [
-          el("h3", { text: "Stay skeptical out there" }),
-          el("p", { html: "Rafter just read every secret on your machine. We never send any off this device — but the next app you install might. Be choosy about what you run." }),
-          el("p", { style: "margin-top:10px", html: "Same care for your code? The <a href=\"https://github.com/Raftersecurity/rafter-cli\" target=\"_blank\" rel=\"noopener noreferrer\">Rafter CLI ↗</a> catches leaked secrets and risky commands before they ship." }),
+          el("h3", { text: "A word on trust" }),
+          el("p", { html: "Rafter just read every secret on your machine, and never sends any of it off this device. Not every tool you install is as careful — vet what you run." }),
+          el("p", { style: "margin-top:10px", html: "To protect the code you and your agents write, the <a href=\"https://github.com/Raftersecurity/rafter-cli\" target=\"_blank\" rel=\"noopener noreferrer\">Rafter CLI ↗</a> flags leaked secrets and risky commands before they ship." }),
         ]),
       ], [el("button", { class: "btn primary", onclick: () => close(true), text: "Go to my dashboard" }), el("button", { class: "btn", onclick: learnMore, text: "Learn a bit more" })]);
     }
