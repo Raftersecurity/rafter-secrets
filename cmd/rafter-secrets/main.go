@@ -204,17 +204,17 @@ func main() {
 		}()
 		// Kick off one scan immediately so the UI shows the current
 		// inventory on launch instead of an empty list that only fills
-		// in when a watched file later changes. Runs in the background
-		// so the server is already accepting connections (and the SSE
-		// scan_started/scan_complete frames drive the UI's loading
+		// in when a watched file later changes. Schedule runs it in the
+		// background so the server is already accepting connections (and
+		// the SSE scan_started/scan_complete frames drive the UI's loading
 		// state) while a large $HOME is walked.
-		go rs.Rescan(ctx)
+		rs.Schedule(ctx)
 
 		// Let the UI's "Scan scope" panel trigger a fresh scan after the
 		// user changes which folders to watch. Set before Run (handlers
-		// aren't serving yet), so no race. The watcher still covers the
-		// original roots until restart; a manual re-scan reflects new scope.
-		srv.SetRescan(func() { go rs.Rescan(ctx) })
+		// aren't serving yet), so no race. Schedule coalesces this with any
+		// in-flight walk instead of stacking a second concurrent scan.
+		srv.SetRescan(func() { rs.Schedule(ctx) })
 	}
 
 	if !*noOpen {

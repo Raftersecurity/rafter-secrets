@@ -21,7 +21,6 @@ func walkRoot(
 	allRoots []string,
 	excludes []excludeMatcher,
 	seen map[string]struct{},
-	doc *storage.Global,
 	r *Result,
 	now time.Time,
 ) {
@@ -30,7 +29,7 @@ func walkRoot(
 		r.Errors = append(r.Errors, err)
 		return
 	}
-	walkOne(ctx, root, info, allRoots, excludes, seen, doc, r, now, []string{root})
+	walkOne(ctx, root, info, allRoots, excludes, seen, r, now, []string{root})
 }
 
 // walkOne handles a single directory entry: dispatches to a scanner
@@ -47,7 +46,6 @@ func walkOne(
 	allRoots []string,
 	excludes []excludeMatcher,
 	seen map[string]struct{},
-	doc *storage.Global,
 	r *Result,
 	now time.Time,
 	ancestors []string,
@@ -120,7 +118,7 @@ func walkOne(
 				r.Errors = append(r.Errors, err)
 				continue
 			}
-			walkOne(ctx, full, child, allRoots, excludes, seen, doc, r, now, next)
+			walkOne(ctx, full, child, allRoots, excludes, seen, r, now, next)
 		}
 		return
 	}
@@ -160,7 +158,10 @@ func walkOne(
 				}
 			}
 		}
-		out := doc.Upsert(storage.Upsertable{
+		// Collect the observation rather than mutating a doc here: the
+		// walk runs with no docstore lock held (see internal/rescan). The
+		// fold-into-doc step is Result.Apply, called under a short lock.
+		r.upserts = append(r.upserts, storage.Upsertable{
 			KeyName: fs.KeyName,
 			Value:   fs.Value,
 			Found:   fs.Source,
@@ -168,14 +169,6 @@ func walkOne(
 			Kind:    classify.Classify(fs.KeyName, fs.Value, fs.Source.SourceType, fs.Source.Path),
 		})
 		r.SecretsFound++
-		if out.Secret != nil {
-			r.Changes = append(r.Changes, Change{
-				Outcome:  out.Outcome,
-				SecretID: out.Secret.ID,
-				KeyName:  out.Secret.KeyName,
-				Path:     fs.Source.Path,
-			})
-		}
 	}
 }
 

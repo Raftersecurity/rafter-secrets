@@ -58,6 +58,18 @@ type ScanConfig struct {
 	Excludes []string `json:"excludes"`
 }
 
+// Clone returns a deep copy of the scan config. The rescan loop snapshots
+// the config under the docstore lock and then walks the filesystem with
+// the lock released; cloning the slices keeps a concurrent edit to the
+// live config (e.g. the UI changing scan roots mid-scan) from mutating the
+// slice the walk is iterating.
+func (c ScanConfig) Clone() ScanConfig {
+	return ScanConfig{
+		Roots:    append([]string(nil), c.Roots...),
+		Excludes: append([]string(nil), c.Excludes...),
+	}
+}
+
 type Telemetry struct {
 	Enabled bool `json:"enabled"`
 }

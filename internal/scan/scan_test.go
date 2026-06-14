@@ -205,6 +205,62 @@ func TestScan_CallsCorrectScannerForType(t *testing.T) {
 	}
 }
 
+// TestObserveApply_MatchesRun pins the rs-1h0 split: Observe (the
+// lock-free filesystem walk) followed by Apply (the short, doc-mutating
+// half) produces exactly the same store + stats + change outcomes as the
+// combined Run. It also proves Observe never needs a doc — it has no
+// storage.Global parameter, so by construction it can't hold the docstore
+// lock the rescan loop guards with.
+func TestObserveApply_MatchesRun(t *testing.T) {
+	tmp := t.TempDir()
+	writeFile(t, filepath.Join(tmp, "a", ".env"), "ALPHA=alpha-value-12345\n")
+	writeFile(t, filepath.Join(tmp, "b", ".env"), "BETA=beta-value-67890\n")
+	writeFile(t, filepath.Join(tmp, "b", ".env.local"), "ALPHA=alpha-value-12345\n")
+	cfg := storage.ScanConfig{Roots: []string{tmp}}
+
+	// Reference: the all-in-one Run.
+	want := storage.Empty()
+	rRun, err := Run(context.Background(), want, cfg)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// Split: Observe (no doc) then Apply.
+	res, err := Observe(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("Observe: %v", err)
+	}
+	if len(res.upserts) != rRun.SecretsFound {
+		t.Errorf("Observe collected %d upserts, want %d", len(res.upserts), rRun.SecretsFound)
+	}
+	if res.FilesScanned != rRun.FilesScanned || res.SecretsFound != rRun.SecretsFound {
+		t.Errorf("stats differ: Observe{files=%d secrets=%d} Run{files=%d secrets=%d}",
+			res.FilesScanned, res.SecretsFound, rRun.FilesScanned, rRun.SecretsFound)
+	}
+
+	got := storage.Empty()
+	changes := res.Apply(got)
+	if len(changes) != len(rRun.Changes) {
+		t.Fatalf("Apply produced %d changes, Run produced %d", len(changes), len(rRun.Changes))
+	}
+	for i := range changes {
+		if changes[i] != rRun.Changes[i] {
+			t.Errorf("change[%d] = %+v, want %+v", i, changes[i], rRun.Changes[i])
+		}
+	}
+
+	// The resulting stores must be identical: same secrets, deduped the
+	// same way, with the same FoundIn locations.
+	if len(got.Secrets) != len(want.Secrets) {
+		t.Fatalf("secret count: split=%d run=%d", len(got.Secrets), len(want.Secrets))
+	}
+	for _, w := range want.Secrets {
+		if !hasSecretWithKeyAtPath(got, w.KeyName, w.FoundIn[0].Path) {
+			t.Errorf("split store missing %q at %s", w.KeyName, w.FoundIn[0].Path)
+		}
+	}
+}
+
 func TestScan_DedupsAcrossSources(t *testing.T) {
 	tmp := t.TempDir()
 	writeFile(t, filepath.Join(tmp, "a", ".env"), "SHARED=samevalue\n")

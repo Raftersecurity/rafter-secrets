@@ -38,9 +38,15 @@ type Result struct {
 	Errors []error
 
 	// Changes is the per-secret outcome list emitted by Upsert during
-	// this Run, in scan order. The drift watcher uses this to publish
-	// SSE events; CLI callers ignore it.
+	// Apply, in scan order. The drift watcher uses this to publish
+	// SSE events; CLI callers ignore it. Populated by Apply, not Observe.
 	Changes []Change
+
+	// upserts is the list of observations collected during the filesystem
+	// walk (Observe). Apply folds them into a storage.Global. Kept
+	// unexported so the walk and the doc-mutation halves stay decoupled:
+	// Observe never touches a doc, so it can run with no lock held.
+	upserts []storage.Upsertable
 
 	// git answers "is this file in/tracked by git?" for the leak signal.
 	// Unexported — never serialised; one per Run.
@@ -66,10 +72,32 @@ type Change struct {
 //
 // Run never mutates any source file. It is safe to invoke repeatedly
 // against the same doc — Upsert handles dedup, drift, and re-observation.
+//
+// Run is exactly Observe followed by Apply against doc, in one call. It
+// exists for single-threaded callers (the CLI) that hold no lock. The
+// server's rescan loop calls Observe and Apply separately so the long
+// filesystem walk never holds the docstore lock — see internal/rescan.
 func Run(ctx context.Context, doc *storage.Global, cfg storage.ScanConfig) (*Result, error) {
 	if doc == nil {
 		return nil, errors.New("scan: nil doc")
 	}
+	r, err := Observe(ctx, cfg)
+	if err != nil {
+		// On a cancelled walk the observations are partial; don't apply
+		// them, so doc is never left half-mutated. The caller surfaces err.
+		return r, err
+	}
+	r.Apply(doc)
+	return r, nil
+}
+
+// Observe walks every root in cfg and collects one observation per secret
+// seen, plus per-walk stats and non-fatal errors. It never touches a
+// storage.Global: the (long) filesystem walk runs with no lock held, so
+// the caller can fold the results in afterwards under its store lock with
+// Apply. The host clock is sampled once here so every Secret applied from
+// this Observe shares one FirstSeen/LastSeen timestamp.
+func Observe(ctx context.Context, cfg storage.ScanConfig) (*Result, error) {
 	r := &Result{}
 	excludes := compileExcludes(cfg.Excludes)
 
@@ -87,9 +115,35 @@ func Run(ctx context.Context, doc *storage.Global, cfg storage.ScanConfig) (*Res
 		if err := ctx.Err(); err != nil {
 			return r, err
 		}
-		walkRoot(ctx, root, roots, excludes, seen, doc, r, now)
+		walkRoot(ctx, root, roots, excludes, seen, r, now)
 	}
 	return r, nil
+}
+
+// Apply folds the observations collected by Observe into doc and returns
+// the per-secret Changes (the drift watcher turns these into SSE events).
+// It is the short, lock-friendly half of a scan: no filesystem I/O happens
+// here, only in-memory Upserts. Call it at most once per Result — a second
+// call would double-apply every observation.
+//
+// A nil doc is a no-op returning nil, so Run can guard nil before Observe.
+func (r *Result) Apply(doc *storage.Global) []Change {
+	if doc == nil {
+		return nil
+	}
+	r.Changes = r.Changes[:0]
+	for i := range r.upserts {
+		out := doc.Upsert(r.upserts[i])
+		if out.Secret != nil {
+			r.Changes = append(r.Changes, Change{
+				Outcome:  out.Outcome,
+				SecretID: out.Secret.ID,
+				KeyName:  out.Secret.KeyName,
+				Path:     r.upserts[i].Found.Path,
+			})
+		}
+	}
+	return r.Changes
 }
 
 // canonicalRoots resolves each configured root to an absolute,

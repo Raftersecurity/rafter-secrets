@@ -131,6 +131,97 @@ func TestRescan_EmitsCreatedThenDriftEvents(t *testing.T) {
 	}
 }
 
+// blockingRescanner builds a Rescanner whose saver parks inside the
+// docstore Update until released, letting a test hold a scan "in flight"
+// and observe how Schedule behaves while one runs. started receives once
+// each time a scan reaches the save step; sending to release lets that
+// save (and the scan) complete.
+func blockingRescanner(t *testing.T, ctx context.Context) (r *Rescanner, started chan struct{}, release chan struct{}) {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("API_KEY=value-1234567890\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	doc := storage.Empty()
+	doc.ScanConfig.Roots = []string{root}
+
+	started = make(chan struct{}, 16)
+	release = make(chan struct{})
+	saver := func(*storage.Global) error {
+		started <- struct{}{}
+		<-release
+		return nil
+	}
+	store := docstore.New(doc, saver)
+	bus := eventbus.New()
+	var err error
+	r, err = New(Config{Store: store, Bus: bus})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = r.cfg.Watcher.Close() })
+	return r, started, release
+}
+
+// TestSchedule_CoalescesBursts is the rs-1h0 coalescing guarantee: while a
+// scan is in flight, any number of Schedule calls collapse into exactly
+// one follow-up scan rather than stacking N concurrent walks.
+func TestSchedule_CoalescesBursts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r, started, release := blockingRescanner(t, ctx)
+
+	r.Schedule(ctx) // scan #1 begins, parks at save
+	<-started
+
+	// Fire a burst while #1 is parked. Each call must return promptly
+	// (setting the rerun flag), not spawn a second concurrent scan.
+	burstDone := make(chan struct{})
+	go func() {
+		for i := 0; i < 5; i++ {
+			r.Schedule(ctx)
+		}
+		close(burstDone)
+	}()
+	select {
+	case <-burstDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Schedule blocked while a scan was in flight")
+	}
+
+	release <- struct{}{} // let scan #1 finish; drain should run one rerun
+	<-started             // exactly one follow-up scan reaches save
+	release <- struct{}{} // let the follow-up finish
+
+	// No third scan should ever reach the saver — the 5 calls coalesced.
+	select {
+	case <-started:
+		t.Fatal("a third scan ran; bursts did not coalesce")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// TestSchedule_RunsAgainAfterIdle proves the latch resets: once a scan
+// finishes with no pending rerun, a later Schedule starts a fresh scan.
+func TestSchedule_RunsAgainAfterIdle(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r, started, release := blockingRescanner(t, ctx)
+
+	r.Schedule(ctx)
+	<-started
+	release <- struct{}{} // scan #1 done, no rerun pending → latch clears
+
+	// A brand-new Schedule after the latch cleared must start a scan.
+	r.Schedule(ctx)
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Schedule after idle did not start a new scan")
+	}
+	release <- struct{}{}
+}
+
 func TestRescan_RequiresAllConfig(t *testing.T) {
 	doc := storage.Empty()
 	saver := func(*storage.Global) error { return nil }
