@@ -138,3 +138,39 @@ func TestWizard_PersistsToScanConfig(t *testing.T) {
 		t.Errorf("second FirstRun must not overwrite existing Excludes; got %v", doc.ScanConfig.Excludes)
 	}
 }
+
+func TestWizard_MergeDefaultExcludes(t *testing.T) {
+	withFakeHome(t)
+
+	// An existing config with a custom exclude and only a couple of the old
+	// defaults — the situation a pre-upgrade install is in.
+	doc := storage.Empty()
+	doc.ScanConfig.Roots = []string{"/code"}
+	doc.ScanConfig.Excludes = []string{"**/node_modules/", "~/mine/"}
+
+	changed := MergeDefaultExcludes(doc)
+	if !changed {
+		t.Fatal("MergeDefaultExcludes should report a change when defaults are missing")
+	}
+	have := map[string]bool{}
+	for _, e := range doc.ScanConfig.Excludes {
+		if have[e] {
+			t.Errorf("duplicate exclude after merge: %q", e)
+		}
+		have[e] = true
+	}
+	// The user's custom entry survives.
+	if !have["~/mine/"] {
+		t.Errorf("merge dropped the user's custom exclude; got %v", doc.ScanConfig.Excludes)
+	}
+	// Newly-curated cache/vendor/editor excludes are now present.
+	for _, want := range []string{"~/go/pkg/", "**/site-packages/", "~/.cursor/extensions/", "**/testdata/"} {
+		if !have[want] {
+			t.Errorf("merge did not add %q; got %v", want, doc.ScanConfig.Excludes)
+		}
+	}
+	// Idempotent: a second merge changes nothing.
+	if MergeDefaultExcludes(doc) {
+		t.Error("second MergeDefaultExcludes should be a no-op")
+	}
+}

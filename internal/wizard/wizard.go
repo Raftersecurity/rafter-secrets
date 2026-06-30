@@ -178,7 +178,60 @@ func DefaultExcludes() []string {
 		// committed .env.example noise (e.g. ~/.codex/.tmp/plugins/**, ~/.hermes).
 		"~/.codex/",
 		"~/.hermes/",
+		// Package / dependency caches — vendored third-party code, never the
+		// user's own secrets. The Go module cache in particular ships piles of
+		// .env fixtures that drown the real findings (rs-an0).
+		"~/go/pkg/",         // Go module + build cache (default GOPATH)
+		"**/site-packages/", // Python installed deps
+		"**/.tox/",
+		"**/.pytest_cache/",
+		"**/.mypy_cache/",
+		"**/.ruff_cache/",
+		"**/.terraform/",
+		"**/.pnpm-store/",
+		"**/.yarn/",
+		"**/Pods/", // CocoaPods (iOS)
+		"~/.rustup/",
+		"~/.pub-cache/",
+		// Editor / IDE state and extension bundles — third-party extension code
+		// (e.g. a Cursor extension's own .env), not the user's projects.
+		"**/.idea/",
+		"~/.vscode/extensions/",
+		"~/.vscode-server/",
+		"~/.cursor/extensions/",
+		"~/.antigravity/",
+		// Test fixtures — placeholder/sample secrets by design (incl. this tool's
+		// own internal/.../testdata). Skipping them keeps the signal high.
+		"**/testdata/",
 	}
+}
+
+// MergeDefaultExcludes additively unions any DefaultExcludes() entries that are
+// missing from the doc's configured excludes, preserving the user's existing
+// (and custom) excludes and their order. It returns true if anything changed.
+//
+// DefaultExcludes only seeds a *first* run, so without this an existing install
+// never picks up newly-curated cache/vendor excludes — leaving the same
+// vendored-noise problem on every later scan (rs-an0). The merge is purely
+// additive (it never removes a user's entry), and the entries it adds are
+// well-known dependency/cache/editor dirs that are never a user's own secrets.
+func MergeDefaultExcludes(doc *storage.Global) bool {
+	if doc == nil {
+		return false
+	}
+	have := make(map[string]bool, len(doc.ScanConfig.Excludes))
+	for _, e := range doc.ScanConfig.Excludes {
+		have[strings.TrimSpace(e)] = true
+	}
+	changed := false
+	for _, d := range DefaultExcludes() {
+		if !have[d] {
+			doc.ScanConfig.Excludes = append(doc.ScanConfig.Excludes, d)
+			have[d] = true
+			changed = true
+		}
+	}
+	return changed
 }
 
 // readLine reads a single line of user input, stripping the newline.

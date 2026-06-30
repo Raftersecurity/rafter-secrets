@@ -16,6 +16,7 @@ import (
 	"github.com/Raftersecurity/rafter-secrets/internal/edit"
 	"github.com/Raftersecurity/rafter-secrets/internal/scan"
 	"github.com/Raftersecurity/rafter-secrets/internal/storage"
+	"github.com/Raftersecurity/rafter-secrets/internal/wizard"
 )
 
 // subcommands lists the CLI verbs. If os.Args[1] is one of these, the binary
@@ -276,6 +277,9 @@ func cmdScan(args []string) int {
 	if err != nil {
 		return fail(*jsonOut, 1, err.Error())
 	}
+	// Pull in any newly-curated default excludes (cache/vendor/editor dirs) so a
+	// CLI scan keeps the same high signal-to-noise as a fresh install (rs-an0).
+	wizard.MergeDefaultExcludes(env.doc)
 	res, err := scan.Run(context.Background(), env.doc, env.doc.ScanConfig)
 	if err != nil {
 		return fail(*jsonOut, 1, err.Error())

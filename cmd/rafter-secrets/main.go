@@ -95,6 +95,12 @@ func main() {
 		if err := storage.Save(storePath, doc); err != nil {
 			log.Fatalf("rafter-secrets: save store: %v", err)
 		}
+	} else if wizard.MergeDefaultExcludes(doc) {
+		// Existing install: pull in any newly-curated cache/vendor/editor
+		// excludes so later releases keep the noise down without a re-setup.
+		if err := storage.Save(storePath, doc); err != nil {
+			fmt.Fprintf(os.Stderr, "rafter-secrets: couldn't persist updated excludes: %v\n", err)
+		}
 	}
 
 	if *rescan {
