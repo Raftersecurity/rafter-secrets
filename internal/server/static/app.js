@@ -612,14 +612,28 @@
     });
   }
   function confirmFix(o) {
+    const cancelBtn = el("button", { class: "btn sm", onclick: closeModal, text: "Cancel" });
+    const confirmBtn = el("button", { class: "btn primary sm", text: o.confirmText });
+    // Disable + show a spinner the instant the action is confirmed and while the
+    // write runs, so there's clear feedback and no double-click (double POST).
+    // onConfirm closes the modal on success; on error it keeps the modal open,
+    // so we re-enable for a retry.
+    let busy = false;
+    confirmBtn.addEventListener("click", async () => {
+      if (busy) return;
+      busy = true;
+      confirmBtn.disabled = true; cancelBtn.disabled = true;
+      clear(confirmBtn);
+      confirmBtn.appendChild(el("span", { class: "spin" }));
+      confirmBtn.appendChild(document.createTextNode(" Working…"));
+      try { await o.onConfirm(); }
+      finally { busy = false; confirmBtn.disabled = false; cancelBtn.disabled = false; clear(confirmBtn); confirmBtn.textContent = o.confirmText; }
+    });
     const modal = el("div", { class: "modal confirm" }, [
       el("div", { class: "mhead" }, [ el("h2", { text: o.title }), el("button", { class: "btn ghost sm mclose", onclick: closeModal, text: "✕" }) ]),
       el("p", { class: "msub", text: o.lead }),
       (o.detail && o.detail.length) ? el("div", { class: "confirm-detail mono" }, o.detail.map((d) => el("div", { text: d }))) : null,
-      el("div", { class: "mactions" }, [
-        el("button", { class: "btn sm", onclick: closeModal, text: "Cancel" }),
-        el("button", { class: "btn primary sm", onclick: o.onConfirm, text: o.confirmText }),
-      ]),
+      el("div", { class: "mactions" }, [ cancelBtn, confirmBtn ]),
     ]);
     clear(modalRoot);
     modalRoot.appendChild(el("div", { class: "modal-wrap", onclick: (e) => { if (e.target.classList.contains("modal-wrap")) closeModal(); } }, [ modal ]));
@@ -692,7 +706,7 @@
   // learn-more. Auto-runs on first launch, re-launchable from the "?" button.
   function startWalkthrough() {
     let i = 0;
-    const lock = { checked: false, files: 0, done: false, n: 0 };
+    const lock = { checked: false, files: 0, done: false, n: 0, locking: false };
     const screens = [welcome, whatIs, makePrivate, allSet];
     function close(done) { if (done) { try { localStorage.setItem("rafter.tour", "done"); } catch (_) {} } clear(walkthroughRoot); }
     function go(n) { i = n; draw(); }
@@ -741,6 +755,7 @@
         : el("div", { class: "wt-lockbox" }, [el("span", { html: lock.checked ? (lock.files ? "<b>" + lock.files + "</b> of your secret files can be opened by other accounts on this computer right now." : "Good news — your secret files are already private to you.") : "Checking your files…" })]);
       let buttons;
       if (lock.done || (lock.checked && lock.files === 0)) buttons = [el("button", { class: "btn primary", onclick: next, text: "Next →" })];
+      else if (lock.locking) buttons = [el("button", { class: "btn primary", disabled: "disabled" }, [ el("span", { class: "spin" }), document.createTextNode(" Locking…") ])];
       else { const lb = el("button", { class: "btn primary", onclick: doLock, text: "Lock them down" }); if (!lock.checked) lb.disabled = true; buttons = [lb, el("button", { class: "btn", onclick: next, text: "Skip for now" })]; }
       frame([
         el("div", { class: "wt-eyebrow", text: "2 · Make them private" }),
@@ -755,9 +770,11 @@
       }
     }
     function doLock() {
+      if (lock.locking) return; // guard against a double-click → double POST
+      lock.locking = true; draw(); // show the "Locking…" spinner immediately
       api("/api/secure-all", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apply: true }) })
-        .then(async (r) => { lock.done = true; lock.n = (r && r.files || []).length; await loadSecrets(); draw(); })
-        .catch((e) => setToast("Couldn't lock them down: " + e.message, true));
+        .then(async (r) => { lock.locking = false; lock.done = true; lock.n = (r && r.files || []).length; await loadSecrets(); draw(); })
+        .catch((e) => { lock.locking = false; draw(); setToast("Couldn't lock them down: " + e.message, true); });
     }
     function allSet() {
       frame([
