@@ -10,28 +10,28 @@
 class RafterSecrets < Formula
   desc "See and manage every secret sitting in plain text on your machine"
   homepage "https://github.com/Raftersecurity/rafter-secrets"
-  version "0.3.0"
+  version "0.4.0"
   license "MIT"
 
   on_macos do
     on_arm do
-      url "https://github.com/Raftersecurity/rafter-secrets/releases/download/v0.3.0/rafter-secrets-darwin-arm64"
-      sha256 "c92b82fb8e2bfbce09e0f988a32386592c96dfda4fdf0cc703b097cffd0d9c2f"
+      url "https://github.com/Raftersecurity/rafter-secrets/releases/download/v0.4.0/rafter-secrets-darwin-arm64"
+      sha256 "54f47781bb73925262d06d29c683773f2776925715b52f2d15cf2be24a2bf230"
     end
     on_intel do
-      url "https://github.com/Raftersecurity/rafter-secrets/releases/download/v0.3.0/rafter-secrets-darwin-amd64"
-      sha256 "1badd51ae1f73015f6960b7182858ba890dd79c796d7520e583559e6b789f4f8"
+      url "https://github.com/Raftersecurity/rafter-secrets/releases/download/v0.4.0/rafter-secrets-darwin-amd64"
+      sha256 "2e63192b3296fd4309c563ba1efc9b769e571eff5e8f7e99f3978e496e8e2239"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/Raftersecurity/rafter-secrets/releases/download/v0.3.0/rafter-secrets-linux-arm64"
-      sha256 "82c26c4d3577bf3d0f80628190acc0a25a1fe6cee209f6daa2c4b1dc70ff4c43"
+      url "https://github.com/Raftersecurity/rafter-secrets/releases/download/v0.4.0/rafter-secrets-linux-arm64"
+      sha256 "f709c752f004d9f16dbc47336520945bca7eb23c954a24039a0bd593af5b5575"
     end
     on_intel do
-      url "https://github.com/Raftersecurity/rafter-secrets/releases/download/v0.3.0/rafter-secrets-linux-amd64"
-      sha256 "8106c53ec560d48d5ba0d517729cd06ea537a2340cb68e28fe5019c382fcc020"
+      url "https://github.com/Raftersecurity/rafter-secrets/releases/download/v0.4.0/rafter-secrets-linux-amd64"
+      sha256 "4cf9185285ec94a7fba365f856df5315a0460668a3124188a62364efb0a7193c"
     end
   end
 
