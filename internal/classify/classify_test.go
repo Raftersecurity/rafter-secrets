@@ -46,8 +46,17 @@ func TestClassify(t *testing.T) {
 		{"FOO", "9f2c1ae7b3d84c0fa1e6b27c5d9038af", "envfile", KindEnv},
 		// A GitHub PAT is caught by the vendored ruleset.
 		{"GH_TOKEN", tok("ghp_", 36), "envfile", KindSecret},
-		// A real key mistakenly under a PUBLIC prefix is still a secret.
+		// A genuinely-PRIVATE key mistakenly under a public prefix is a real
+		// leak (a secret shipped to the browser) — still a secret.
 		{"NEXT_PUBLIC_STRIPE", tok("sk_live_", 24), "envfile", KindSecret},
+		{"NEXT_PUBLIC_GH", tok("ghp_", 36), "envfile", KindSecret},
+		{"VITE_AWS_KEY", tok("AKIA", 16), "envfile", KindSecret},
+		{"NEXT_PUBLIC_DB", dbURL, "envfile", KindSecret},
+		// ...but a PUBLISHABLE value under a public prefix is working as intended
+		// (it's meant to ship to the browser) — env, not a flagged secret.
+		{"NEXT_PUBLIC_SUPABASE_ANON_KEY", jwt, "envfile", KindEnv},
+		{"NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", tok("pk_live_", 24), "envfile", KindEnv},
+		{"VUE_APP_API_TOKEN", tok("AIza", 35), "envfile", KindEnv},
 
 		// Env / config — not secrets.
 		{"PORT", "3000", "envfile", KindEnv},

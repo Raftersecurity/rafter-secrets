@@ -47,10 +47,23 @@ func Classify(keyName, value, sourceType, path string) string {
 	if isPlaceholder(v) {
 		return KindEnv
 	}
-	// A recognisable credential value is the strongest signal — even under a
-	// "public" key name (a real key mistakenly in NEXT_PUBLIC_* is a *worse*
-	// problem, so we want it in Secrets). Generic shapes + the vendored
-	// betterleaks ruleset.
+	// Public-by-convention env vars (NEXT_PUBLIC_*, VITE_*, …) ship to the
+	// browser by design — a publishable key belongs there: Stripe pk_, a
+	// Supabase anon JWT, a Firebase/Maps config key. So a public-prefixed key is
+	// env even when its value looks credential-shaped. The ONE exception is a
+	// genuinely-PRIVATE credential (a private key, a URL with embedded creds, a
+	// secret-class provider token like sk_live_/ghp_/AKIA): shipping one of
+	// those to the browser is a real leak, so keep flagging it as a secret.
+	// Checked before the generic credential-value rule so publishable values
+	// aren't swept into Secrets.
+	if hasPublicPrefix(keyName) {
+		if looksLikePrivateCredential(v) {
+			return KindSecret
+		}
+		return KindEnv
+	}
+	// A recognisable credential value is the strongest signal. Generic shapes +
+	// the vendored betterleaks ruleset.
 	if looksLikeCredentialValue(keyName, v) {
 		return KindSecret
 	}
@@ -59,10 +72,6 @@ func Classify(keyName, value, sourceType, path string) string {
 	// The file it points at is scanned on its own. Checked before the key-name
 	// rule so a path-valued "credentials" key isn't mislabelled a secret.
 	if isPathValue(v) {
-		return KindEnv
-	}
-	// Public-by-convention env vars ship to browsers by design.
-	if hasPublicPrefix(keyName) {
 		return KindEnv
 	}
 	// Secret-ish key name (works even when the value looks unremarkable, e.g.
@@ -122,7 +131,8 @@ func looksLikeCredentialValue(keyName, v string) bool {
 
 var publicPrefixes = []string{
 	"NEXT_PUBLIC_", "VITE_", "REACT_APP_", "PUBLIC_", "EXPO_PUBLIC_",
-	"GATSBY_", "NUXT_PUBLIC_", "STORYBOOK_",
+	"GATSBY_", "NUXT_PUBLIC_", "NUXT_ENV_", "STORYBOOK_", "VUE_APP_",
+	"REDWOOD_ENV_",
 }
 
 func hasPublicPrefix(keyName string) bool {
@@ -133,6 +143,32 @@ func hasPublicPrefix(keyName string) bool {
 		}
 	}
 	return false
+}
+
+// rePrivateCred matches value prefixes that are unambiguously a SECRET (never
+// a publishable key), so we still flag them when they appear under a public
+// prefix — that's a real key mistakenly shipped to the browser. Deliberately
+// excludes publishable shapes (Stripe pk_, JWTs/anon keys, Google AIza* map
+// keys), which under a public prefix are working-as-intended.
+var rePrivateCred = regexp.MustCompile(`(?i)^(` +
+	`sk_live_|sk_test_|rk_live_|rk_test_|` + // Stripe secret / restricted
+	`sk-ant-|sk-proj-|sk-[a-z0-9]{20}|` + // Anthropic / OpenAI secret keys
+	`gh[posur]_|github_pat_|glpat-|` + // GitHub / GitLab tokens
+	`xox[baprs]-|` + // Slack tokens
+	`shp(ss|at|ca|pa)_|` + // Shopify tokens
+	`npm_|` + // npm token
+	`AKIA|ASIA` + // AWS access key id
+	`)`)
+
+// looksLikePrivateCredential reports whether v is a genuinely-private secret
+// (vs a publishable key). Used only to decide whether a public-prefixed var is
+// a real leak. A private-key PEM or a URL with embedded credentials is always
+// private; otherwise we match the known secret-class provider prefixes.
+func looksLikePrivateCredential(v string) bool {
+	if rePEM.MatchString(v) || reURLCreds.MatchString(v) {
+		return true
+	}
+	return rePrivateCred.MatchString(v)
 }
 
 func keyLooksSecret(lowerKey string) bool { return reSecretName.MatchString(lowerKey) }
