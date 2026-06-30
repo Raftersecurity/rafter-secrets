@@ -182,11 +182,14 @@ safety rules).
 
 Changing a secret's **value** is a CLI-only, local operation — there are no
 value-editing endpoints on the web server and no "rotate" or "add" buttons in the
-browser. The web app's only write is **securing** a file (tightening its
-permissions) — previewed, fully reversible, and it never touches the value.
-Writing to real credential files is serious, so every change — a CLI value edit
-or a web secure — is wrapped in machine-checked safety — see the full
-[secure-design doc](docs/design/secret-editing.md):
+browser. The web app's only write is **securing** a file — a real `chmod` to
+owner-only (`0600`), tightening its permissions so other accounts can't read it.
+It's previewed, fully reversible, and never touches the value. (So if you ever
+notice a tracked file's permissions change under your own scans, that was a
+secure op — not a phantom: it's recorded in `rafter-secrets history` and undoable
+with `rafter-secrets undo`.) Writing to real credential files is serious, so
+every change — a CLI value edit or a web secure — is wrapped in machine-checked
+safety — see the full [secure-design doc](docs/design/secret-editing.md):
 
 - **Preview first** — you see exactly which files change before anything is written.
 - **Per-format safe encoding + verify** — the new value is encoded for the file's
