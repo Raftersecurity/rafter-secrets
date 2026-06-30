@@ -50,8 +50,11 @@ func TestClassify(t *testing.T) {
 		// leak (a secret shipped to the browser) — still a secret.
 		{"NEXT_PUBLIC_STRIPE", tok("sk_live_", 24), "envfile", KindSecret},
 		{"NEXT_PUBLIC_GH", tok("ghp_", 36), "envfile", KindSecret},
-		{"VITE_AWS_KEY", tok("AKIA", 16), "envfile", KindSecret},
 		{"NEXT_PUBLIC_DB", dbURL, "envfile", KindSecret},
+		// A credential-shaped value that ISN'T a known-publishable form stays a
+		// secret under a public prefix — we fail toward Secret so a real key
+		// made public isn't silently downgraded to config.
+		{"NEXT_PUBLIC_SLACK", "xoxb-" + tok("", 30), "envfile", KindSecret},
 		// ...but a PUBLISHABLE value under a public prefix is working as intended
 		// (it's meant to ship to the browser) — env, not a flagged secret.
 		{"NEXT_PUBLIC_SUPABASE_ANON_KEY", jwt, "envfile", KindEnv},

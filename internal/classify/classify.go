@@ -48,16 +48,16 @@ func Classify(keyName, value, sourceType, path string) string {
 		return KindEnv
 	}
 	// Public-by-convention env vars (NEXT_PUBLIC_*, VITE_*, …) ship to the
-	// browser by design — a publishable key belongs there: Stripe pk_, a
-	// Supabase anon JWT, a Firebase/Maps config key. So a public-prefixed key is
-	// env even when its value looks credential-shaped. The ONE exception is a
-	// genuinely-PRIVATE credential (a private key, a URL with embedded creds, a
-	// secret-class provider token like sk_live_/ghp_/AKIA): shipping one of
-	// those to the browser is a real leak, so keep flagging it as a secret.
-	// Checked before the generic credential-value rule so publishable values
-	// aren't swept into Secrets.
+	// browser by design, so a publishable value belongs in Environment: a
+	// Stripe pk_, a Supabase/Clerk anon JWT, a Google AIza* browser key. But a
+	// genuinely-private credential under a public prefix is a REAL leak — a
+	// secret shipped to the browser — so we keep the safe default: anything
+	// credential-shaped under a public prefix is still a Secret UNLESS it's a
+	// known-publishable form. (Failing toward Secret matters for a leak
+	// detector: an unrecognised private key shape must not be silently
+	// downgraded to config just because the var is prefixed "public".)
 	if hasPublicPrefix(keyName) {
-		if looksLikePrivateCredential(v) {
+		if looksLikeCredentialValue(keyName, v) && !looksPublishable(v) {
 			return KindSecret
 		}
 		return KindEnv
@@ -145,30 +145,19 @@ func hasPublicPrefix(keyName string) bool {
 	return false
 }
 
-// rePrivateCred matches value prefixes that are unambiguously a SECRET (never
-// a publishable key), so we still flag them when they appear under a public
-// prefix — that's a real key mistakenly shipped to the browser. Deliberately
-// excludes publishable shapes (Stripe pk_, JWTs/anon keys, Google AIza* map
-// keys), which under a public prefix are working-as-intended.
-var rePrivateCred = regexp.MustCompile(`(?i)^(` +
-	`sk_live_|sk_test_|rk_live_|rk_test_|` + // Stripe secret / restricted
-	`sk-ant-|sk-proj-|sk-[a-z0-9]{20}|` + // Anthropic / OpenAI secret keys
-	`gh[posur]_|github_pat_|glpat-|` + // GitHub / GitLab tokens
-	`xox[baprs]-|` + // Slack tokens
-	`shp(ss|at|ca|pa)_|` + // Shopify tokens
-	`npm_|` + // npm token
-	`AKIA|ASIA` + // AWS access key id
-	`)`)
+// rePublishable matches the value shapes that are MEANT to be public — Stripe
+// publishable keys and Google "AIza" browser/API keys. Combined with reJWT
+// (anon/session JWTs like a Supabase anon key), these are the only forms we
+// treat as safe under a public prefix; every other credential-shaped value
+// stays a Secret. pk_ keys are lowercase and AIza is fixed-case, so no /i.
+var rePublishable = regexp.MustCompile(`^(pk_live_|pk_test_|AIza)`)
 
-// looksLikePrivateCredential reports whether v is a genuinely-private secret
-// (vs a publishable key). Used only to decide whether a public-prefixed var is
-// a real leak. A private-key PEM or a URL with embedded credentials is always
-// private; otherwise we match the known secret-class provider prefixes.
-func looksLikePrivateCredential(v string) bool {
-	if rePEM.MatchString(v) || reURLCreds.MatchString(v) {
-		return true
-	}
-	return rePrivateCred.MatchString(v)
+// looksPublishable reports whether v is a value designed to be exposed in a
+// browser bundle (a JWT/anon key, a Stripe pk_, a Google AIza* key). Only these
+// are demoted to env under a public prefix; an unrecognised shape fails toward
+// Secret so a real key mistakenly made public is never silently hidden.
+func looksPublishable(v string) bool {
+	return reJWT.MatchString(v) || rePublishable.MatchString(v)
 }
 
 func keyLooksSecret(lowerKey string) bool { return reSecretName.MatchString(lowerKey) }
