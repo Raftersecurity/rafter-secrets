@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/Raftersecurity/rafter-secrets/internal/edit"
+	"github.com/Raftersecurity/rafter-secrets/internal/risk"
 	"github.com/Raftersecurity/rafter-secrets/internal/scan"
 	"github.com/Raftersecurity/rafter-secrets/internal/storage"
 	"github.com/Raftersecurity/rafter-secrets/internal/wizard"
@@ -304,16 +305,52 @@ func cmdList(args []string) int {
 	if err != nil {
 		return fail(*jsonOut, 1, err.Error())
 	}
+	// Rank worst-first so consumers (dashboard, agent skill, scripts) get the
+	// leak ordering for free instead of recomputing exposure themselves. The
+	// assessment is the canonical, server-side form of the UI's ranking.
+	type ranked struct {
+		s storage.Secret
+		a risk.Assessment
+	}
+	rs := make([]ranked, 0, len(env.doc.Secrets))
+	for _, s := range env.doc.Secrets {
+		s := s
+		rs = append(rs, ranked{s: s, a: risk.Assess(&s)})
+	}
+	sort.SliceStable(rs, func(i, j int) bool {
+		if ri, rj := rs[i].a.Severity.Rank(), rs[j].a.Severity.Rank(); ri != rj {
+			return ri > rj // worst first
+		}
+		return rs[i].s.KeyName < rs[j].s.KeyName
+	})
+
 	if *jsonOut {
 		out := []map[string]any{}
-		for _, s := range env.doc.Secrets {
+		for _, r := range rs {
 			files := []string{}
-			for _, f := range s.FoundIn {
+			for _, f := range r.s.FoundIn {
 				if f.Path != "" {
 					files = append(files, f.Path)
 				}
 			}
-			out = append(out, map[string]any{"id": s.ID, "key": s.KeyName, "files": files, "projects": s.Annotation.Tags, "stale": s.Annotation.Stale})
+			out = append(out, map[string]any{
+				"id":       r.s.ID,
+				"key":      r.s.KeyName,
+				"files":    files,
+				"projects": r.s.Annotation.Tags,
+				"stale":    r.s.Annotation.Stale,
+				// Leak/exposure surface — git is the #1 vector and now lives in
+				// the inventory output, not just the dashboard (rs-ais).
+				"severity":         string(r.a.Severity),
+				"kind":             r.a.Kind,
+				"committed_to_git": r.a.CommittedToGit,
+				"not_gitignored":   r.a.NotGitignored,
+				"git_ignored":      r.a.GitIgnored,
+				"world_readable":   r.a.WorldReadable,
+				"group_readable":   r.a.GroupReadable,
+				"duplicated":       r.a.Duplicated,
+				"reasons":          r.a.Reasons,
+			})
 		}
 		return emit(map[string]any{"ok": true, "secrets": out})
 	}
@@ -321,19 +358,38 @@ func cmdList(args []string) int {
 		fmt.Println("No secrets tracked yet. Run: rafter-secrets scan")
 		return 0
 	}
-	keys := make([]string, len(env.doc.Secrets))
-	for i, s := range env.doc.Secrets {
+	// Human view: worst-first with a severity tag, so the few that matter
+	// surface above the bulk instead of an alphabetical wall.
+	for _, r := range rs {
 		n := 0
-		for _, f := range s.FoundIn {
+		for _, f := range r.s.FoundIn {
 			if f.Path != "" {
 				n++
 			}
 		}
-		keys[i] = fmt.Sprintf("%-32s %d location(s)", s.KeyName, n)
+		fmt.Printf("%-10s %-32s %d location(s)", severityTag(r.a.Severity), r.s.KeyName, n)
+		if len(r.a.Reasons) > 0 && r.a.Severity != risk.SeverityNone {
+			fmt.Printf("  — %s", r.a.Reasons[0])
+		}
+		fmt.Println()
 	}
-	sort.Strings(keys)
-	fmt.Println(strings.Join(keys, "\n"))
 	return 0
+}
+
+// severityTag is a short, fixed-width label for the human `list` output.
+func severityTag(s risk.Severity) string {
+	switch s {
+	case risk.SeverityCritical:
+		return "[CRITICAL]"
+	case risk.SeverityHigh:
+		return "[HIGH]"
+	case risk.SeverityMedium:
+		return "[MEDIUM]"
+	case risk.SeverityLow:
+		return "[low]"
+	default:
+		return "[ok]"
+	}
 }
 
 func cmdShow(args []string) int {
