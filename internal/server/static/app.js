@@ -333,14 +333,25 @@
       ]));
     }
 
+    const committedSecrets = live.filter(inGitHistory);
+    const committedN = committedSecrets.length;
+
     const hero = el("div", { class: "hero" }, [ el("div", { class: "eyebrow", text: "On this computer" }), big ]);
-    // One primary action, attached to the hero (not a floating card).
-    if (exposedN > 0) {
-      hero.appendChild(el("div", { class: "heroact" }, [
-        el("button", { class: "btn primary", onclick: () => secureAllFix(exposedSecrets), text: "Lock down " + exposedN + " readable file" + (exposedN === 1 ? "" : "s") }),
-        el("span", { class: "hint", text: "make them private to you — previewed first, undoable" }),
-      ]));
+    // The primary action follows the threat model: a secret committed to git is
+    // the #1 vector (it may already be pushed), and locking a file down CANNOT
+    // un-leak what's already in git. So when anything is committed, rotation
+    // leads and the (marginal) lock-down is demoted to a secondary action —
+    // otherwise the prominent button fixes the weakest vector and reads as "done".
+    const act = el("div", { class: "heroact" });
+    if (committedN > 0) {
+      act.appendChild(el("button", { class: "btn primary", onclick: () => { focus = "committed"; render(); }, text: "Fix " + committedN + " committed to git" }));
+      act.appendChild(el("span", { class: "hint", text: "rotate " + (committedN === 1 ? "it" : "them") + " — a locked-down file can’t un-leak what’s already in git" }));
+      if (exposedN > 0) act.appendChild(el("button", { class: "btn ghost sm", onclick: () => secureAllFix(exposedSecrets), text: "Also lock down " + exposedN + " readable file" + (exposedN === 1 ? "" : "s") }));
+    } else if (exposedN > 0) {
+      act.appendChild(el("button", { class: "btn primary", onclick: () => secureAllFix(exposedSecrets), text: "Lock down " + exposedN + " readable file" + (exposedN === 1 ? "" : "s") }));
+      act.appendChild(el("span", { class: "hint", text: "make them private to you — previewed first, undoable" }));
     }
+    if (act.childNodes.length) hero.appendChild(act);
     hero.appendChild(el("p", { class: "lede", html: "Passwords, keys, and tokens sitting in plain files — readable by anything you run, <b>including AI coding agents</b>. Nothing here is changed, moved, or uploaded." }));
     return hero;
   }
@@ -594,6 +605,22 @@
     setTimeout(() => { t.style.transition = "opacity .3s"; t.style.opacity = "0"; setTimeout(() => t.remove(), 300); }, 9000);
   }
 
+  // nudgeCommitted warns, after a lock-down, that chmod doesn't touch the #1
+  // vector — anything committed to git still needs rotating — with a one-tap
+  // jump to those. No-op when nothing is in git.
+  function nudgeCommitted() {
+    const committed = state.secrets.filter((s) => !isStale(s) && inGitHistory(s));
+    if (!committed.length) return;
+    const n = committed.length;
+    const t = el("div", { class: "toast err" }, [
+      el("span", { class: "ti", html: ICON.warn }),
+      document.createTextNode("That only stops other accounts here. " + n + " secret" + (n === 1 ? " is" : "s are") + " committed to git — rotate " + (n === 1 ? "it" : "them") + "."),
+      el("button", { class: "toast-undo", text: "Show", onclick: () => { t.remove(); focus = "committed"; lens = "secrets"; render(); } }),
+    ]);
+    toastWrap.appendChild(t);
+    setTimeout(() => { t.style.transition = "opacity .3s"; t.style.opacity = "0"; setTimeout(() => t.remove(), 300); }, 12000);
+  }
+
   async function secureAllFix(targets) {
     // Scope to the passed secrets (the filtered/searched exposed set) so the
     // hero button locks down exactly what's on screen — not every exposed file.
@@ -617,8 +644,13 @@
           const r = await api("/api/secure-all", { method: "POST", headers: { "Content-Type": "application/json" }, body: body(true) });
           closeModal();
           const n = (r.files || []).length;
-          toastWithUndo(n + " file" + (n === 1 ? "" : "s") + " locked down — only you can read " + (n === 1 ? "it" : "them") + " now.", r.op_id);
-          await loadSecrets(); renderDrawer();
+          // Be honest about what this fixed: chmod only stops OTHER ACCOUNTS on
+          // this computer — it does nothing about a git leak. Say so, so the
+          // green checkmark doesn't read as "all safe now".
+          toastWithUndo(n + " file" + (n === 1 ? "" : "s") + " locked down — other accounts on this computer can no longer read " + (n === 1 ? "it" : "them") + ".", r.op_id);
+          await loadSecrets();
+          nudgeCommitted(); // steer to the #1 vector if anything is still in git
+          renderDrawer();
         } catch (e) { setToast("Couldn't apply that: " + e.message, true); }
       },
     });
