@@ -48,11 +48,20 @@ func main() {
 	// invocation (or UI flags like --no-open) falls through to runUI.
 	// `serve` is an explicit alias for the default UI launch — drop it and
 	// let the flag parser see the rest.
+	demoMode := false
 	if len(os.Args) > 1 {
-		if os.Args[1] == "serve" {
+		switch os.Args[1] {
+		case "serve":
 			os.Args = append(os.Args[:1], os.Args[2:]...)
-		} else if code, ok := dispatchCLI(os.Args[1:]); ok {
-			os.Exit(code)
+		case "demo":
+			// A sandboxed UI launch over fake fixtures — falls through to runUI
+			// like `serve`, but with a demo store + scan root (see setupDemo).
+			demoMode = true
+			os.Args = append(os.Args[:1], os.Args[2:]...)
+		default:
+			if code, ok := dispatchCLI(os.Args[1:]); ok {
+				os.Exit(code)
+			}
 		}
 	}
 
@@ -74,32 +83,47 @@ func main() {
 		fmt.Fprintf(os.Stderr, "rafter-secrets: could not raise open-file limit (%v); continuing with watch caps\n", err)
 	}
 
-	storePath, err := storage.DefaultPath()
-	if err != nil {
-		log.Fatalf("rafter-secrets: resolve store path: %v", err)
-	}
-	doc, err := storage.Load(storePath)
-	if err != nil {
-		log.Fatalf("rafter-secrets: load store: %v", err)
-	}
+	var (
+		storePath string
+		doc       *storage.Global
+		err       error
+	)
+	if demoMode {
+		// Sandbox: a separate store + scan root over generated fake fixtures, so
+		// the demo never reads or writes the user's real files.
+		storePath, doc, err = setupDemo()
+		if err != nil {
+			log.Fatalf("rafter-secrets: demo setup: %v", err)
+		}
+		fmt.Fprintf(os.Stderr, "rafter-secrets: DEMO MODE — every secret below is FAKE; scanning the sandbox at %s (your real machine is untouched).\n", demoDir())
+	} else {
+		storePath, err = storage.DefaultPath()
+		if err != nil {
+			log.Fatalf("rafter-secrets: resolve store path: %v", err)
+		}
+		doc, err = storage.Load(storePath)
+		if err != nil {
+			log.Fatalf("rafter-secrets: load store: %v", err)
+		}
 
-	// First-run setup: if no roots are configured, apply sensible defaults
-	// ($HOME + curated excludes) without prompting and go straight to the web
-	// app. Onboarding — including adjusting scope — happens in the UI, not at a
-	// terminal the target user may never have opened. Persist so later launches
-	// skip this.
-	if len(doc.ScanConfig.Roots) == 0 {
-		if err := wizard.ApplyDefaults(doc); err != nil {
-			log.Fatalf("rafter-secrets: first-run setup: %v", err)
-		}
-		if err := storage.Save(storePath, doc); err != nil {
-			log.Fatalf("rafter-secrets: save store: %v", err)
-		}
-	} else if wizard.MergeDefaultExcludes(doc) {
-		// Existing install: pull in any newly-curated cache/vendor/editor
-		// excludes so later releases keep the noise down without a re-setup.
-		if err := storage.Save(storePath, doc); err != nil {
-			fmt.Fprintf(os.Stderr, "rafter-secrets: couldn't persist updated excludes: %v\n", err)
+		// First-run setup: if no roots are configured, apply sensible defaults
+		// ($HOME + curated excludes) without prompting and go straight to the web
+		// app. Onboarding — including adjusting scope — happens in the UI, not at a
+		// terminal the target user may never have opened. Persist so later launches
+		// skip this.
+		if len(doc.ScanConfig.Roots) == 0 {
+			if err := wizard.ApplyDefaults(doc); err != nil {
+				log.Fatalf("rafter-secrets: first-run setup: %v", err)
+			}
+			if err := storage.Save(storePath, doc); err != nil {
+				log.Fatalf("rafter-secrets: save store: %v", err)
+			}
+		} else if wizard.MergeDefaultExcludes(doc) {
+			// Existing install: pull in any newly-curated cache/vendor/editor
+			// excludes so later releases keep the noise down without a re-setup.
+			if err := storage.Save(storePath, doc); err != nil {
+				fmt.Fprintf(os.Stderr, "rafter-secrets: couldn't persist updated excludes: %v\n", err)
+			}
 		}
 	}
 

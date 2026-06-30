@@ -70,6 +70,8 @@ Usage:
 
 Commands:
   serve             Launch the local web app (also the default with no command)
+  demo              Launch the web app over a sandbox of FAKE secrets (safe to
+                    show anyone — never touches your real files)
   scan              Scan your configured locations and update the inventory
   list              List tracked secrets
   show <key>        Show one secret: where it lives, projects, status
