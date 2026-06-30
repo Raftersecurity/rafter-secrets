@@ -287,7 +287,11 @@ func (w *Watcher) addTree(root string) error {
 	errStop := errors.New("watch: stop")
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			if firstErr == nil {
+			// A vanished entry or broken symlink encountered mid-walk is benign
+			// — that path simply isn't watchable. Don't escalate a missing
+			// optional path into a scary "partial setup" warning; only real
+			// (e.g. permission) errors are worth surfacing.
+			if firstErr == nil && !errors.Is(err, fs.ErrNotExist) {
 				firstErr = err
 			}
 			return nil

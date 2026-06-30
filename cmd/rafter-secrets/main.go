@@ -154,6 +154,14 @@ func main() {
 		// Don't leave the launch link (and its spent token) on disk after exit.
 		defer func() { _ = os.Remove(p) }()
 	}
+	// With --no-open there's no browser to carry the link, so print the full
+	// tokenized URL to stdout where it's easy to capture/pipe (headless + agent
+	// use). It's loopback + a single-use token — low risk, high convenience —
+	// and going to stdout keeps it out of the stderr log the redirect path
+	// deliberately avoids writing the token to.
+	if *noOpen {
+		fmt.Println(url)
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

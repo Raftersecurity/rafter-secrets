@@ -170,7 +170,21 @@ func (e *cliEnv) findSecret(key, id string) (*storage.Secret, error) {
 	case len(matches) == 0:
 		return nil, fmt.Errorf("no secret named %q (try: rafter-secrets list)", key)
 	case len(matches) > 1:
-		return nil, fmt.Errorf("%q matches %d secrets — pass --id to pick one", key, len(matches))
+		// List the matches inline (id + first file) so the user can pick one
+		// instead of re-running blind to discover the --id values.
+		var b strings.Builder
+		fmt.Fprintf(&b, "%q matches %d secrets — re-run with one of these --id values:", key, len(matches))
+		for _, m := range matches {
+			loc := "(no file)"
+			for _, f := range m.FoundIn {
+				if f.Path != "" {
+					loc = f.Path
+					break
+				}
+			}
+			fmt.Fprintf(&b, "\n  --id %-10s %s", m.ID, loc)
+		}
+		return nil, errors.New(b.String())
 	default:
 		return matches[0], nil
 	}
