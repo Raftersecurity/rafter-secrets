@@ -33,6 +33,12 @@
   let firstScanDone = false; // have we seen the initial scan finish? gates the "all clear" empty state
   let sawScanActivity = false; // have we seen ANY scan_started/scan_complete frame yet?
   let serverDown = false;    // heartbeat/SSE says the local server has stopped
+  // Inventory-fetch concurrency guards. Several events (scan_complete, each
+  // secret_created) trigger overlapping loadSecrets() calls; loadSeq/appliedSeq
+  // ensure only the newest-issued response wins (no stale empty clobbering a
+  // good one), and inflight gates the "all clear" so it never flashes while a
+  // fetch is still settling.
+  let inflight = 0, loadSeq = 0, appliedSeq = 0;
 
   // ---- helpers ---------------------------------------------------------
   function el(tag, attrs, kids) {
@@ -221,26 +227,50 @@
 
   // ---- data ------------------------------------------------------------
   async function loadSecrets() {
-    try {
-      const body = await api("/api/secrets");
-      state.secrets = body.secrets || [];
-      state.revealDisabled = !!body.reveal_disabled;
-      const roots = (body.scan_config && body.scan_config.roots) || [];
-      state.scan_home = roots.slice().sort((a, b) => a.length - b.length)[0] || null;
-      render();
-      if (!tourChecked) { tourChecked = true; if (state.secrets.length && localStorage.getItem("rafter.tour") !== "done") startWalkthrough(); }
-    } catch (e) {
-      clear(content);
-      content.appendChild(el("div", { class: "empty" }, [ el("div", { class: "ec", html: ICON.warn }), el("h3", { text: "Couldn't reach Rafter Secrets" }), el("p", { text: e.message + ". Try reloading." }) ]));
+    const seq = ++loadSeq;
+    inflight++;
+    let body, err;
+    try { body = await api("/api/secrets"); }
+    catch (e) { err = e; }
+    finally { inflight--; }
+    if (err) {
+      // Don't advance appliedSeq on error (it carries no data), and only show
+      // the error state when there's no good inventory already on screen and
+      // nothing fresher is pending.
+      if (seq >= appliedSeq && !state.secrets.length && inflight === 0) {
+        clear(content);
+        content.appendChild(el("div", { class: "empty" }, [ el("div", { class: "ec", html: ICON.warn }), el("h3", { text: "Couldn't reach Rafter Secrets" }), el("p", { text: err.message + ". Try reloading." }) ]));
+      }
+      return;
     }
+    // A newer load was issued after this one — its fresher result must win even
+    // if it already resolved. Drop this stale response.
+    if (seq < appliedSeq) return;
+    appliedSeq = seq;
+    state.secrets = body.secrets || [];
+    state.revealDisabled = !!body.reveal_disabled;
+    const roots = (body.scan_config && body.scan_config.roots) || [];
+    state.scan_home = roots.slice().sort((a, b) => a.length - b.length)[0] || null;
+    render();
+    // Auto-run the first-launch tour once secrets actually EXIST — gate on
+    // presence, not "first load completed", so a slow first scan doesn't burn
+    // the one-shot gate on an empty boot load and then never open the tour.
+    if (!tourChecked && state.secrets.length) { tourChecked = true; if (localStorage.getItem("rafter.tour") !== "done") startWalkthrough(); }
   }
 
   // ---- render ----------------------------------------------------------
   function render() {
     clear(content);
     // Before the first scan finishes, an empty inventory means "still looking",
-    // NOT "all clear" — showing the verdict early is a false all-clear on first run.
-    if (state.secrets.length === 0) { content.appendChild(firstScanDone ? renderEmpty() : renderScanning()); content.appendChild(renderFoot()); return; }
+    // NOT "all clear" — showing the verdict early is a false all-clear on first
+    // run. Also wait until no inventory fetch is in flight, so a not-yet-settled
+    // empty result can't flash the verdict between scan_complete and its reload.
+    if (state.secrets.length === 0) {
+      const settled = firstScanDone && inflight === 0;
+      content.appendChild(settled ? renderEmpty() : renderScanning());
+      content.appendChild(renderFoot());
+      return;
+    }
 
     content.appendChild(renderLensToggle());
     const pool = lensSecrets().filter(matchesSearch);
